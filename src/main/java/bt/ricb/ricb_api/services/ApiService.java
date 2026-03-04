@@ -48,7 +48,7 @@ public class ApiService {
 
 			request.setHeader("Authorization", "Bearer " + this.bearerToken);
 
-			CloseableHttpResponse response = httpClient.execute(request);
+			CloseableHttpResponse response = httpClient.execute((HttpUriRequest) request);
 
 			try {
 				HttpEntity entity = response.getEntity();
@@ -86,11 +86,11 @@ public class ApiService {
 		String passphrase = "12345678";
 
 		UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
-				.queryParam("action", "send").queryParam("username", username)
-				.queryParam("passphrase", passphrase)
-				.queryParam("message", smsContent).queryParam("phone", mobileNo);
+				.queryParam("action", new Object[] { "send" }).queryParam("username", new Object[] { username })
+				.queryParam("passphrase", new Object[] { passphrase })
+				.queryParam("message", new Object[] { smsContent }).queryParam("phone", new Object[] { mobileNo });
 
-		return this.restTemplate.getForEntity(builder.toUriString(), String.class);
+		return this.restTemplate.getForEntity(builder.toUriString(), String.class, new Object[0]);
 	}
 	
 	public ResponseEntity<String> sendSmsTcell(String smsContent, String mobileNo) {
@@ -99,11 +99,11 @@ public class ApiService {
 		String passphrase = "123456";
 
 		UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
-				.queryParam("action", "send").queryParam("username", username)
-				.queryParam("passphrase", passphrase)
-				.queryParam("message", smsContent).queryParam("phone", mobileNo);
+				.queryParam("action", new Object[] { "send" }).queryParam("username", new Object[] { username })
+				.queryParam("passphrase", new Object[] { passphrase })
+				.queryParam("message", new Object[] { smsContent }).queryParam("phone", new Object[] { mobileNo });
 
-		return this.restTemplate.getForEntity(builder.toUriString(), String.class);
+		return this.restTemplate.getForEntity(builder.toUriString(), String.class, new Object[0]);
 	}
 	
 
@@ -111,10 +111,10 @@ public class ApiService {
 			throws ParserConfigurationException, SAXException, IOException, JSONException {
 		String apiUrl = "http://192.168.0.205/EFIMORICBCMS/ServiceIntegration/eFIMOIntegration.asmx/GetLoansData_JSON";
 		UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl).queryParam("customerid",
-                cidNo);
-		ResponseEntity<String> accountData = this.restTemplate.getForEntity(builder.toUriString(), String.class
-        );
-		String data = accountData.getBody();
+				new Object[] { cidNo });
+		ResponseEntity<String> accountData = this.restTemplate.getForEntity(builder.toUriString(), String.class,
+				new Object[0]);
+		String data = (String) accountData.getBody();
 		JSONObject jsonObject = XML.toJSONObject(data);
 		String pageName = jsonObject.getJSONObject("string").getString("content");
 		return pageName;
@@ -160,7 +160,7 @@ public class ApiService {
 
 			request.setHeader("Authorization", "Bearer " + this.bearerToken);
 
-			CloseableHttpResponse response = httpClient.execute(request);
+			CloseableHttpResponse response = httpClient.execute((HttpUriRequest) request);
 
 			try {
 				HttpEntity entity = response.getEntity();
