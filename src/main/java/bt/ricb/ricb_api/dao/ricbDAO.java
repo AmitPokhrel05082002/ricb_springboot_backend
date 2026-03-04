@@ -25,17 +25,15 @@ public class ricbDAO {
 
     private DataSource dataSource = null;
     private DataSource mySQLDataSource = null;
+    private EmailUtil emailUtil = null;
 
     @Autowired
-    public void RicbDAO(DataSource dataSource, DataSource mySQLDataSource) {
+    public void RicbDAO(DataSource dataSource, DataSource mySQLDataSource, EmailUtil emailUtil) {
         this.dataSource = dataSource;
         this.mySQLDataSource = mySQLDataSource;
+        this.emailUtil = emailUtil;
     }
-
-    // Autowire EmailUtil so sendmail uses the Spring-managed bean
-    @Autowired
-    private EmailUtil emailUtil;
-
+    
     private static final String GET_ALL_FIRE_SF_DETAILS = ""
 			 + "select * from V_FIRE_SF_CURR_POLICY where PREVIOUS_POLICY_NO LIKE ? ";
 
@@ -936,21 +934,13 @@ private static final String GET_OTIP_CUSTOMER = ""
 	
 	private static ricbDAO ricbdao = null; 
 
-    public static ricbDAO getInstance() {
-        // Try to return the Spring-managed bean if available
-        try {
-            ricbDAO springBean = bt.ricb.ricb_api.config.SpringContext.getBean(ricbDAO.class);
-            if (springBean != null) return springBean;
-        } catch (Exception ignored) {
-            // ignore and fall back
-        }
-
-        if(ricbdao == null){
-            ricbdao = new ricbDAO();
-        }
-        return ricbdao;
-    }
-
+	public ricbDAO getInstance() {
+		if(ricbdao == null){
+			ricbdao = new ricbDAO();
+		}
+		return ricbdao;
+	}
+	
     public JSONArray getPolicyDetails(String cidNo, String type) throws Exception {
     	System.out.print(cidNo);
         Connection conn = null;
@@ -1183,10 +1173,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -1211,10 +1201,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -1479,10 +1469,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -1510,10 +1500,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -1541,13 +1531,13 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
-	 return json;
+		return json;
 	}
 	public JSONArray getotipplanfinal(String days, String age, String plan) throws Exception
 	{
@@ -1573,10 +1563,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -1602,10 +1592,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -1688,10 +1678,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
-		 ConnectionManager.close(conn, rs, pst);
+			ConnectionManager.close(conn, rs, pst);
 		}
 		
 		return json;
@@ -2054,23 +2044,18 @@ private static final String GET_OTIP_CUSTOMER = ""
 		JSONArray json = new JSONArray();
 		//JSONObject jsonObject = new JSONObject();
 		try {
-
-			// Use injected EmailUtil bean rather than constructing with null
-			if (this.emailUtil == null) {
-				System.err.println("EmailUtil bean not available - cannot send email");
-				return json;
-			}
-			this.emailUtil.generateAndSendEmail(to, from, subject, message);
-
+			
+			emailUtil.generateAndSendEmail(to, from, subject, message);
+			
 		}catch (Exception e) {
 			e.printStackTrace();
 			return json;
 		} finally {
 			ConnectionManager.close(conn, rs, pst);
 		}
-
+		
 		return json;
-
+	
 	}
 
 	public JSONArray forgotpasswordotp(String cidNumber, String otp)  throws Exception {
@@ -2282,8 +2267,8 @@ private static final String GET_OTIP_CUSTOMER = ""
 				json = convertor.toJSONArray(rs);
 			}
 		} catch (Exception e) {
-		 e.printStackTrace();
-		 return json;
+			e.printStackTrace();
+			return json;
 		} finally {
 			ConnectionManager.close(conn, rs, pst);
 		}
@@ -2453,10 +2438,10 @@ private static final String GET_OTIP_CUSTOMER = ""
 					json = convertor.toJSONArray(rs);
 				}
 			} catch (Exception e) {
-			 e.printStackTrace();
-			 return json;
+				e.printStackTrace();
+				return json;
 			} finally {
-			 ConnectionManager.close(conn, rs, pst);
+				ConnectionManager.close(conn, rs, pst);
 			}
 			
 			return json;

@@ -9,4 +9,5 @@ public class RicbApiApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(RicbApiApplication.class, args);
 	}
+
 }
