@@ -42,7 +42,18 @@ public class SwaggerConfig {
     }
 
 
-
+    @Bean
+    public GroupedOpenApi ClaimantApiGroup() {
+        return GroupedOpenApi.builder()
+                .group("Claimant")
+                .displayName("Claimant Endpoints")
+                .pathsToMatch("/claims/**")
+                .addOperationCustomizer((operation, handlerMethod) -> {
+                    operation.setTags(Collections.singletonList("Claimant"));
+                    return operation;
+                })
+                .build();
+    }
     // --- Per-controller groups ---
 
     @Bean
