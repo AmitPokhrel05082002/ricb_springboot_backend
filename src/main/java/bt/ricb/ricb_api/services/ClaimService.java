@@ -9,10 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class ClaimService {
@@ -35,8 +33,16 @@ public class ClaimService {
     @Autowired
     private ClaimDocumentsRepository claimDocumentsRepo;
 
+    @Autowired
+    private EmailService emailService;
 
+    @Autowired
+    private ApiService apiService;
+
+
+    // ================= Claim Status Counts =================
     public Map<String, Long> getClaimStatusCounts() {
+
         Map<String, Long> counts = new HashMap<>();
 
         counts.put("totalClaims", claimRepo.count());
@@ -49,40 +55,23 @@ public class ClaimService {
     }
 
 
-
     // ================= CIN Generator =================
     private String generateCin() {
 
-        // Get the current year
         int currentYear = java.time.LocalDate.now().getYear();
 
-        // Get the last CIN from DB that starts with the current year
         String lastCin = claimRepo.getLastCinByYear(currentYear);
 
-        int serialNumber = 1; // default if no CIN exists for this year
+        int serialNumber = 1;
 
         if (lastCin != null) {
-            // lastCin is like "CIN-20260028"
-            String lastNumberStr = lastCin.substring(8); // get "0028"
+            String lastNumberStr = lastCin.substring(8);
             serialNumber = Integer.parseInt(lastNumberStr) + 1;
         }
 
         return String.format("CIN-%d%04d", currentYear, serialNumber);
     }
 
-//    private String generateCin() {
-//
-//        String lastCin = claimRepo.getLastCin();
-//
-//        if (lastCin == null) {
-//            return "CIN-00000001";
-//        }
-//
-//        int number = Integer.parseInt(lastCin.split("-")[1]);
-//        number++;
-//
-//        return String.format("CIN-%08d", number);
-//    }
 
     // ================= Submit Full Claim =================
     @Transactional
@@ -141,22 +130,24 @@ public class ClaimService {
 
 
         // ================= Policy =================
-        PolicyDTO policyDTO = dto.getPolicy();
-
-        if (policyDTO != null) {
-            PolicyEntity policy = new PolicyEntity();
-            policy.setPolicyHolderId(policyHolder.getId());
-            policy.setPolicyName(policyDTO.getPolicyName());
-            policy.setPolicyNumber(policyDTO.getPolicyNumber());
-            policy.setIntimationDate(policyDTO.getIntimationDate());
-            policy.setNomineeName(policyDTO.getNomineeName());
-            policy.setRelation(policyDTO.getRelation());
-            policy.setSumAssured(policyDTO.getSumAssured());
-            policy.setStatus(policyDTO.getStatus());
-            policy.setCreatedAt(java.time.LocalDateTime.now());
-
-            policyRepo.save(policy);
-        }
+//        PolicyDTO policyDTO = dto.getPolicy();
+//
+//        if (policyDTO != null) {
+//
+//            PolicyEntity policy = new PolicyEntity();
+//
+//            policy.setPolicyHolderId(policyHolder.getId());
+//            policy.setPolicyName(policyDTO.getPolicyName());
+//            policy.setPolicyNumber(policyDTO.getPolicyNumber());
+//            policy.setIntimationDate(policyDTO.getIntimationDate());
+//            policy.setNomineeName(policyDTO.getNomineeName());
+//            policy.setRelation(policyDTO.getRelation());
+//            policy.setSumAssured(policyDTO.getSumAssured());
+//            policy.setStatus(policyDTO.getStatus());
+//            policy.setCreatedAt(LocalDateTime.now());
+//
+//            policyRepo.save(policy);
+//        }
 
 
         // ================= Payee =================
@@ -199,6 +190,7 @@ public class ClaimService {
         claim.setNearestBranchId(
                 claimRepo.getBranchIdByName(claimDTO.getNearestBranchName())
         );
+
         claim.setClaimType(claimDTO.getClaimType());
         claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
 
@@ -207,7 +199,7 @@ public class ClaimService {
         claim.setDeathType(claimDTO.getDeathType());
         claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
 
-        claim.setStatus("Draft");
+        claim.setStatus("Pending");
 
         claim.setCreatedAt(LocalDateTime.now());
         claim.setUpdatedAt(LocalDateTime.now());
@@ -225,7 +217,6 @@ public class ClaimService {
             doc.setClaimId(claim.getId());
             doc.setZipFilePath(docDTO.getZipFilePath());
 
-            // FIX Long → Integer
             if (docDTO.getFileSizeKb() != null) {
                 doc.setFileSizeKb(docDTO.getFileSizeKb().intValue());
             }
@@ -234,58 +225,70 @@ public class ClaimService {
 
             claimDocumentsRepo.save(doc);
         }
-    }
 
 
-    // ================= Get All Claims =================
-    public List<ClaimEntity> getAllClaims() {
-        return claimRepo.findAll();
-    }
+        // ================= Notification =================
 
+        String cin = claim.getCin();
 
-    // ================= Get Claims by CID =================
-    public List<ClaimEntity> getClaimsByCid(String cid) {
+        String smsMessage = "Your claim has been submitted successfully. CIN: " + cin;
 
-        Optional<ClaimantEntity> claimant = claimantRepo.findByCid(cid);
+        String emailSubject = "Insurance Claim Submitted";
 
-        if (claimant.isPresent()) {
-            return claimRepo.findByClaimantId(claimant.get().getId());
+        String emailBody =
+                "Dear " + claimant.getFullName() + ",\n\n" +
+                        "Your insurance claim has been submitted successfully.\n\n" +
+                        "CIN Number: " + cin + "\n\n" +
+                        "Please keep this CIN number for claim tracking.\n\n" +
+                        "Thank you.";
+
+        try {
+
+            if (claimant.getMobileNumber() != null && !claimant.getMobileNumber().isBlank()) {
+                apiService.sendSms(smsMessage, claimant.getMobileNumber());
+            }
+
+            if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+                emailService.sendEmail(
+                        claimant.getEmailAddress(),
+                        emailSubject,
+                        emailBody,
+                        null
+                );
+            }
+
+        } catch (Exception e) {
+
+            System.out.println("Notification failed: " + e.getMessage());
         }
 
-        return List.of();
     }
 
 
-    // ================= Get Claim by CIN =================
-    public Optional<ClaimEntity> getClaimByCin(String cin) {
-        return claimRepo.findByCin(cin);
+    // ================= Claim Summary =================
+    public List<ClaimSummaryDTO> getAllClaimSummaries() {
+
+        List<ClaimEntity> claims = claimRepo.findAll(); // fetch all claims
+
+        return claims.stream().map(claim -> {
+            ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                    .orElseThrow(() -> new RuntimeException("Claimant not found"));
+
+            ClaimSummaryDTO summary = new ClaimSummaryDTO();
+            summary.setCin(claim.getCin());
+            summary.setClaimantName(claimant.getFullName());
+            summary.setSubmittedDate(claim.getUpdatedAt());
+            summary.setStatus(claim.getStatus());
+            summary.setCreatedAt(claim.getCreatedAt());
+
+            return summary;
+        }).collect(Collectors.toList());
     }
 
 
-    // ========== 1. Claim Summary ==========
-    public ClaimSummaryDTO getClaimSummaryByCin(String cin) {
-        ClaimEntity claim = claimRepo.findByCin(cin)
-                .orElseThrow(() -> new RuntimeException("Claim not found"));
-
-        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
-                .orElseThrow(() -> new RuntimeException("Claimant not found"));
-
-        PolicyHolderEntity policyHolder = policyHolderRepo.findById(claim.getPolicyHolderId())
-                .orElseThrow(() -> new RuntimeException("Policy holder not found"));
-
-        ClaimSummaryDTO summary = new ClaimSummaryDTO();
-        summary.setCin(claim.getCin());
-        summary.setClaimantName(claimant.getFullName());
-        summary.setPolicyHolderName(policyHolder.getCid()); // can use full name if available
-        summary.setSubmittedDate(claim.getUpdatedAt());
-        summary.setStatus(claim.getStatus());
-        summary.setCreatedAt(claim.getCreatedAt());
-
-        return summary;
-    }
-
-    // ========== 2. Full Claim Details ==========
+    // ================= Full Claim Details =================
     public FullClaimDTO getFullClaimByCin(String cin) {
+
         ClaimEntity claim = claimRepo.findByCin(cin)
                 .orElseThrow(() -> new RuntimeException("Claim not found"));
 
@@ -302,14 +305,12 @@ public class ClaimService {
                 .findByClaimId(claim.getId())
                 .orElse(null);
 
-        // ===== Claimant DTO =====
         ClaimantDTO claimantDTO = new ClaimantDTO();
         claimantDTO.setCid(claimant.getCid());
         claimantDTO.setFullName(claimant.getFullName());
         claimantDTO.setMobileNumber(claimant.getMobileNumber());
         claimantDTO.setEmailAddress(claimant.getEmailAddress());
 
-        // ===== Payee DTO =====
         PayeeDTO payeeDTO = new PayeeDTO();
         payeeDTO.setCid(payee.getCid());
         payeeDTO.setAccountHolderName(payee.getAccountHolderName());
@@ -317,12 +318,10 @@ public class ClaimService {
         payeeDTO.setMobileNumber(payee.getMobileNumber());
         payeeDTO.setSameAsClaimant(payee.getSameAsClaimant());
 
-        // ===== Policy Holder DTO =====
         PolicyHolderDTO phDTO = new PolicyHolderDTO();
         phDTO.setCid(policyHolder.getCid());
         phDTO.setDateOfBirth(policyHolder.getDateOfBirth());
 
-        // ===== Claim DTO =====
         ClaimDTO claimDTO = new ClaimDTO();
         claimDTO.setNearestBranchName(claimRepo.getBranchNameById(claim.getNearestBranchId()));
         claimDTO.setClaimType(claim.getClaimType());
@@ -332,15 +331,14 @@ public class ClaimService {
         claimDTO.setDeathType(claim.getDeathType());
         claimDTO.setCauseOfDeath(claim.getCauseOfDeath());
 
-        // ===== Documents DTO =====
         ClaimDocumentsDTO docDTO = null;
+
         if (documents != null) {
             docDTO = new ClaimDocumentsDTO();
             docDTO.setZipFilePath(documents.getZipFilePath());
             docDTO.setFileSizeKb(documents.getFileSizeKb());
         }
 
-        // ===== Full Response =====
         FullClaimDTO response = new FullClaimDTO();
         response.setClaimant(claimantDTO);
         response.setPayee(payeeDTO);

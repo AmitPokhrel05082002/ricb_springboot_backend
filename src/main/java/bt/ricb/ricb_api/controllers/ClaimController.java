@@ -5,6 +5,7 @@ import bt.ricb.ricb_api.models.DTOs.FullClaimDTO;
 import bt.ricb.ricb_api.models.ClaimEntity;
 import bt.ricb.ricb_api.services.ClaimService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,22 +27,15 @@ public class ClaimController {
         return "Claim submitted successfully!";
     }
 
-    // ================= Get all claims =================
-    @GetMapping
-    public List<ClaimEntity> getAllClaims() {
-        return claimService.getAllClaims();
-    }
-
-
 
     // ===== 1. Claim Summary =====
-    @GetMapping("/cin/{cin}")
-    public ResponseEntity<ClaimSummaryDTO> getClaimSummaryByCin(@PathVariable String cin) {
+    @GetMapping("dashboard/claims")
+    public ResponseEntity<List<ClaimSummaryDTO>> getAllClaimSummaries() {
         try {
-            ClaimSummaryDTO summary = claimService.getClaimSummaryByCin(cin);
-            return ResponseEntity.ok(summary);
+            List<ClaimSummaryDTO> summaries = claimService.getAllClaimSummaries();
+            return ResponseEntity.ok(summaries);
         } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 

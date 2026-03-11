@@ -45,11 +45,11 @@ public class SwaggerConfig {
     @Bean
     public GroupedOpenApi ClaimantApiGroup() {
         return GroupedOpenApi.builder()
-                .group("Claimant")
-                .displayName("Claimant Endpoints")
+                .group("Claim")
+                .displayName("Claim Endpoints")
                 .pathsToMatch("/claims/**")
                 .addOperationCustomizer((operation, handlerMethod) -> {
-                    operation.setTags(Collections.singletonList("Claimant"));
+                    operation.setTags(Collections.singletonList("Claim"));
                     return operation;
                 })
                 .build();

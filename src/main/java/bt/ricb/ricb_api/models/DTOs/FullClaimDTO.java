@@ -3,7 +3,7 @@ package bt.ricb.ricb_api.models.DTOs;
 public class FullClaimDTO {
     private ClaimantDTO claimant;
     private PolicyHolderDTO policyHolder;
-    private PolicyDTO policy;
+//    private PolicyDTO policy;
     private ClaimDTO claim;
     private PayeeDTO payee;
     private ClaimDocumentsDTO documents;
@@ -25,6 +25,6 @@ public class FullClaimDTO {
     public ClaimDocumentsDTO getDocuments() { return documents; }
     public void setDocuments(ClaimDocumentsDTO documents) { this.documents = documents; }
 
-    public PolicyDTO getPolicy() { return policy; }
-    public void setPolicy(PolicyDTO policy) { this.policy = policy; }
+//    public PolicyDTO getPolicy() { return policy; }
+//    public void setPolicy(PolicyDTO policy) { this.policy = policy; }
 }
