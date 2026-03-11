@@ -45,6 +45,9 @@ public class ClaimEntity {
     @Column(name="status", nullable = false)
     private String status;
 
+    @Column(name="remarks")
+    private String remarks;
+
     @Column(name="submitted_at")
     private LocalDateTime submittedAt;
 
@@ -53,6 +56,7 @@ public class ClaimEntity {
 
     @Column(name="updated_at")
     private LocalDateTime updatedAt;
+
 
     @Column(name="cin", nullable=false, unique=true)
     private String cin;
@@ -95,6 +99,9 @@ public class ClaimEntity {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getRemarks() { return remarks; }
+    public void setRemarks(String remarks) { this.remarks = remarks; }
 
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }

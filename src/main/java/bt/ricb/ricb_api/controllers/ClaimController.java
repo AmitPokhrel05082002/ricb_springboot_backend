@@ -1,8 +1,10 @@
 package bt.ricb.ricb_api.controllers;
 
+import bt.ricb.ricb_api.models.ClaimAuditEntity;
+import bt.ricb.ricb_api.models.ClaimEntity;
+import bt.ricb.ricb_api.models.DTOs.ClaimActionDTO;
 import bt.ricb.ricb_api.models.DTOs.ClaimSummaryDTO;
 import bt.ricb.ricb_api.models.DTOs.FullClaimDTO;
-import bt.ricb.ricb_api.models.ClaimEntity;
 import bt.ricb.ricb_api.services.ClaimService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -11,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/claims")
@@ -54,4 +55,34 @@ public class ClaimController {
     public ResponseEntity<Map<String, Long>> getClaimStatusCounts() {
         return ResponseEntity.ok(claimService.getClaimStatusCounts());
     }
+
+    @PostMapping("/resubmit")
+    public ResponseEntity<ClaimEntity> resubmitClaim(@RequestBody ClaimActionDTO dto) {
+        ClaimEntity updatedClaim = claimService.resubmitClaim(dto);
+        return ResponseEntity.ok(updatedClaim);
+    }
+
+    @PostMapping("/reject")
+    public ResponseEntity<ClaimEntity> rejectClaim(@RequestBody ClaimActionDTO dto) {
+        ClaimEntity updatedClaim = claimService.rejectClaim(dto);
+        return ResponseEntity.ok(updatedClaim);
+    }
+
+    @PostMapping("/verify")
+    public ResponseEntity<ClaimEntity> verifyClaim(@RequestBody ClaimActionDTO dto) {
+        ClaimEntity updatedClaim = claimService.verifyClaim(dto);
+        return ResponseEntity.ok(updatedClaim);
+    }
+
+    @PostMapping("/approve")
+    public ResponseEntity<ClaimEntity> approveClaim(@RequestBody ClaimActionDTO dto) {
+        ClaimEntity updatedClaim = claimService.approveClaim(dto);
+        return ResponseEntity.ok(updatedClaim);
+    }
+
+    @GetMapping("/{cin}/audit")
+    public ResponseEntity<List<ClaimAuditEntity>> getClaimAudit(@PathVariable String cin) {
+        return ResponseEntity.ok(claimService.getClaimAuditTrail(cin));
+    }
+
 }

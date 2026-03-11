@@ -34,11 +34,16 @@ public class ClaimService {
     private ClaimDocumentsRepository claimDocumentsRepo;
 
     @Autowired
+    private ClaimActionsRepository claimActionsRepo;
+
+    @Autowired
+    private ClaimAuditRepository claimAuditRepo;
+
+    @Autowired
     private EmailService emailService;
 
     @Autowired
     private ApiService apiService;
-
 
     // ================= Claim Status Counts =================
     public Map<String, Long> getClaimStatusCounts() {
@@ -50,6 +55,7 @@ public class ClaimService {
         counts.put("approved", claimRepo.countByStatus("Approved"));
         counts.put("rejected", claimRepo.countByStatus("Rejected"));
         counts.put("resubmission", claimRepo.countByStatus("Resubmission Required"));
+        counts.put("verified", claimRepo.countByStatus("Verified"));
 
         return counts;
     }
@@ -279,6 +285,7 @@ public class ClaimService {
             summary.setClaimantName(claimant.getFullName());
             summary.setSubmittedDate(claim.getUpdatedAt());
             summary.setStatus(claim.getStatus());
+            summary.setRemarks(claim.getRemarks());
             summary.setCreatedAt(claim.getCreatedAt());
 
             return summary;
@@ -348,5 +355,117 @@ public class ClaimService {
 
         return response;
     }
+
+
+    private void logAudit(ClaimEntity claim, String previousStatus, String newStatus, String remarks, Integer actionedBy) {
+        ClaimAuditEntity audit = new ClaimAuditEntity();
+        audit.setClaimId(claim.getId());
+        audit.setCin(claim.getCin());
+        audit.setPreviousStatus(previousStatus);
+        audit.setNewStatus(newStatus);
+        audit.setRemarks(remarks);
+        audit.setActionedBy(actionedBy);
+        audit.setActionedAt(LocalDateTime.now());
+        claimAuditRepo.save(audit);
+    }
+
+
+
+    // ================= Resubmit Claim =================
+    @Transactional
+    public ClaimEntity resubmitClaim(ClaimActionDTO dto) {
+        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+        String oldStatus = claim.getStatus();
+        claim.setStatus("Resubmission Required");
+        claim.setRemarks(dto.getRemarks());
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        ClaimActionEntity action = new ClaimActionEntity();
+        action.setClaimId(claim.getId());
+        action.setActionType(ClaimActionEntity.ActionType.Resubmitted);
+        action.setRemarks(dto.getRemarks());
+        action.setActionedBy(dto.getActionedBy());
+        action.setActionedAt(LocalDateTime.now());
+        claimActionsRepo.save(action);
+
+        logAudit(claim, oldStatus, "Resubmission Required", dto.getRemarks(), dto.getActionedBy());
+        return claim;
+    }
+
+    // ================= Reject Claim =================
+    @Transactional
+    public ClaimEntity rejectClaim(ClaimActionDTO dto) {
+        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+        String oldStatus = claim.getStatus();
+        claim.setStatus("Rejected");
+        claim.setRemarks(dto.getRemarks());
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        ClaimActionEntity action = new ClaimActionEntity();
+        action.setClaimId(claim.getId());
+        action.setActionType(ClaimActionEntity.ActionType.Rejected);
+        action.setRemarks(dto.getRemarks());
+        action.setActionedBy(dto.getActionedBy());
+        action.setActionedAt(LocalDateTime.now());
+        claimActionsRepo.save(action);
+
+        logAudit(claim, oldStatus, "Rejected", dto.getRemarks(), dto.getActionedBy());
+        return claim;
+    }
+
+    // ================= Verify Claim =================
+    @Transactional
+    public ClaimEntity verifyClaim(ClaimActionDTO dto) {
+        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+        String oldStatus = claim.getStatus();
+        claim.setStatus("Verified");
+        claim.setRemarks(dto.getRemarks());
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        ClaimActionEntity action = new ClaimActionEntity();
+        action.setClaimId(claim.getId());
+        action.setActionType(ClaimActionEntity.ActionType.Approved); // or add Verified to enum
+        action.setRemarks(dto.getRemarks());
+        action.setActionedBy(dto.getActionedBy());
+        action.setActionedAt(LocalDateTime.now());
+        claimActionsRepo.save(action);
+
+        logAudit(claim, oldStatus, "Verified", dto.getRemarks(), dto.getActionedBy());
+        return claim;
+    }
+
+    // ================= Approve Claim =================
+    @Transactional
+    public ClaimEntity approveClaim(ClaimActionDTO dto) {
+        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+        String oldStatus = claim.getStatus();
+        claim.setStatus("Approved");
+        claim.setRemarks(dto.getRemarks());
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        ClaimActionEntity action = new ClaimActionEntity();
+        action.setClaimId(claim.getId());
+        action.setActionType(ClaimActionEntity.ActionType.Approved);
+        action.setRemarks(dto.getRemarks());
+        action.setActionedBy(dto.getActionedBy());
+        action.setActionedAt(LocalDateTime.now());
+        claimActionsRepo.save(action);
+
+        logAudit(claim, oldStatus, "Approved", dto.getRemarks(), dto.getActionedBy());
+        return claim;
+    }
+
+    public List<ClaimAuditEntity> getClaimAuditTrail(String cin) {
+        return claimAuditRepo.findByCinOrderByActionedAtDesc(cin);
+    }
+
 
 }
