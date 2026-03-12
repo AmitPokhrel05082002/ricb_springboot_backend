@@ -1,8 +1,10 @@
 package bt.ricb.ricb_api.controllers;
 
 import bt.ricb.ricb_api.models.ClaimAuditEntity;
+import bt.ricb.ricb_api.models.ClaimDocumentsEntity;
 import bt.ricb.ricb_api.models.ClaimEntity;
 import bt.ricb.ricb_api.models.DTOs.ClaimActionDTO;
+import bt.ricb.ricb_api.models.DTOs.ClaimDocumentsDTO;
 import bt.ricb.ricb_api.models.DTOs.ClaimSummaryDTO;
 import bt.ricb.ricb_api.models.DTOs.FullClaimDTO;
 import bt.ricb.ricb_api.services.ClaimService;
@@ -21,16 +23,26 @@ public class ClaimController {
     @Autowired
     private ClaimService claimService;
 
-    // ================= Submit full claim =================
-    @PostMapping("/submit")
+    // ================= Submit a new claim =================
+    @PostMapping()
     public String submitClaim(@RequestBody FullClaimDTO dto) {
         claimService.submitClaim(dto);
         return "Claim submitted successfully!";
     }
 
+    @GetMapping("/{cin}/track")
+    public Map<String, Object> getClaimDetails(@PathVariable String cin) {
+        return claimService.getClaimDetails(cin);
+    }
 
-    // ===== 1. Claim Summary =====
-    @GetMapping("dashboard/claims")
+    // ===== 1. Dashboard status count =====
+    @GetMapping("/status-counts")
+    public ResponseEntity<Map<String, Long>> getClaimStatusCounts() {
+        return ResponseEntity.ok(claimService.getClaimStatusCounts());
+    }
+
+    // ===== 2. Claim summaries for dashboard ===========
+    @GetMapping("summaries")
     public ResponseEntity<List<ClaimSummaryDTO>> getAllClaimSummaries() {
         try {
             List<ClaimSummaryDTO> summaries = claimService.getAllClaimSummaries();
@@ -40,8 +52,8 @@ public class ClaimController {
         }
     }
 
-    // ===== 2. Full Claim Details =====
-    @GetMapping("/cin/{cin}/full")
+    // ===== 3. Full Claim Details =====
+    @GetMapping("/{cin}")
     public ResponseEntity<FullClaimDTO> getFullClaim(@PathVariable String cin) {
         try {
             FullClaimDTO fullClaim = claimService.getFullClaimByCin(cin);
@@ -49,11 +61,6 @@ public class ClaimController {
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
-    }
-
-    @GetMapping("/dashboard/counts")
-    public ResponseEntity<Map<String, Long>> getClaimStatusCounts() {
-        return ResponseEntity.ok(claimService.getClaimStatusCounts());
     }
 
     @PostMapping("/resubmit")
@@ -80,9 +87,14 @@ public class ClaimController {
         return ResponseEntity.ok(updatedClaim);
     }
 
+    @PutMapping("/{cin}/documents")
+    public ClaimDocumentsEntity updateClaimDocumentByCin(@PathVariable String cin,
+                                                         @RequestBody ClaimDocumentsDTO dto) {
+        return claimService.updateClaimDocumentByCin(cin, dto);
+    }
+
     @GetMapping("/{cin}/audit")
     public ResponseEntity<List<ClaimAuditEntity>> getClaimAudit(@PathVariable String cin) {
         return ResponseEntity.ok(claimService.getClaimAuditTrail(cin));
     }
-
 }

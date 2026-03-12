@@ -318,6 +318,15 @@ public class ClaimService {
         claimantDTO.setMobileNumber(claimant.getMobileNumber());
         claimantDTO.setEmailAddress(claimant.getEmailAddress());
 
+        String dzongkhagName = claimantRepo.getDzongkhagNameById(claimant.getDzongkhagId());
+        String gewogName = claimantRepo.getGewogNameById(claimant.getGewogId());
+        String villageName = claimantRepo.getVillageNameById(claimant.getVillageId());
+        claimantDTO.setDzongkhagName(dzongkhagName);
+        claimantDTO.setGewogName(gewogName);
+        claimantDTO.setVillageName(villageName);
+
+
+
         PayeeDTO payeeDTO = new PayeeDTO();
         payeeDTO.setCid(payee.getCid());
         payeeDTO.setAccountHolderName(payee.getAccountHolderName());
@@ -338,6 +347,7 @@ public class ClaimService {
         claimDTO.setDeathType(claim.getDeathType());
         claimDTO.setCauseOfDeath(claim.getCauseOfDeath());
 
+
         ClaimDocumentsDTO docDTO = null;
 
         if (documents != null) {
@@ -352,10 +362,13 @@ public class ClaimService {
         response.setPolicyHolder(phDTO);
         response.setClaim(claimDTO);
         response.setDocuments(docDTO);
+        response.setCin(claim.getCin());
+        response.setCreatedAt(claim.getCreatedAt());
+        response.setStatus(claim.getStatus());
+
 
         return response;
     }
-
 
     private void logAudit(ClaimEntity claim, String previousStatus, String newStatus, String remarks, Integer actionedBy) {
         ClaimAuditEntity audit = new ClaimAuditEntity();
@@ -368,7 +381,6 @@ public class ClaimService {
         audit.setActionedAt(LocalDateTime.now());
         claimAuditRepo.save(audit);
     }
-
 
 
     // ================= Resubmit Claim =================
@@ -467,5 +479,64 @@ public class ClaimService {
         return claimAuditRepo.findByCinOrderByActionedAtDesc(cin);
     }
 
+    // ================= Track Records =================
 
-}
+
+        private final ClaimRepository claimRepository;
+        private final ClaimAuditRepository claimAuditRepository;
+
+        public ClaimService(ClaimRepository claimRepository, ClaimAuditRepository claimAuditRepository) {
+            this.claimRepository = claimRepository;
+            this.claimAuditRepository = claimAuditRepository;
+        }
+
+        public Map<String, Object> getClaimDetails(String cin) {
+            ClaimEntity claim = claimRepository.findByCin(cin)
+                    .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + cin));
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("cin", claim.getCin());
+            response.put("createdAt", claim.getCreatedAt());
+            response.put("updatedAt", claim.getUpdatedAt());
+            response.put("status", claim.getStatus());
+            response.put("remarks", claim.getRemarks());
+
+            List<Map<String, Object>> auditHistory = new ArrayList<>();
+            List<ClaimAuditEntity> audits = claimAuditRepository.findByCinOrderByActionedAtDesc(cin);
+
+            for (ClaimAuditEntity audit : audits) {
+                Map<String, Object> auditMap = new HashMap<>();
+                auditMap.put("actionedAt", audit.getActionedAt());
+                auditMap.put("newStatus", audit.getNewStatus());
+                auditHistory.add(auditMap);
+            }
+
+            response.put("auditHistory", auditHistory);
+
+            return response;
+        }
+
+    // ================= Update Document  =================
+
+    @Transactional
+    public ClaimDocumentsEntity updateClaimDocumentByCin(String cin, ClaimDocumentsDTO dto) {
+        // Find claim by CIN
+        ClaimEntity claim = claimRepo.findByCin(cin)
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + cin));
+
+        // Find document by claimId
+        ClaimDocumentsEntity entity = claimDocumentsRepo.findByClaimId(claim.getId())
+                .orElseThrow(() -> new RuntimeException("Claim document not found for CIN: " + cin));
+
+        // Update fields
+        entity.setZipFilePath(dto.getZipFilePath());
+        entity.setFileSizeKb(dto.getFileSizeKb());
+        entity.setUploadedAt(LocalDateTime.now());
+
+        return claimDocumentsRepo.save(entity);
+
+    }
+
+    }
+
+

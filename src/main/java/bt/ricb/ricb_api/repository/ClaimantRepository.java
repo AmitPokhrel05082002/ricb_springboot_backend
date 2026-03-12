@@ -23,5 +23,14 @@ public interface ClaimantRepository extends JpaRepository<ClaimantEntity, Intege
     // Village ID from name
     @Query(value = "SELECT village_id FROM villages WHERE village_name = :name", nativeQuery = true)
     Integer getVillageIdByName(String name);
+    // ✅ Add reverse lookups (name by ID)
+    @Query(value = "SELECT dzongkhag_name FROM dzongkhags WHERE dzongkhag_id = :id", nativeQuery = true)
+    String getDzongkhagNameById(@Param("id") Integer id);
+
+    @Query(value = "SELECT gewog_name FROM gewogs WHERE gewog_id = :id", nativeQuery = true)
+    String getGewogNameById(@Param("id") Integer id);
+
+    @Query(value = "SELECT village_name FROM villages WHERE village_id = :id", nativeQuery = true)
+    String getVillageNameById(@Param("id") Integer id);
 
 }
