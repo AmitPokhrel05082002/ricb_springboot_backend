@@ -3,10 +3,7 @@ package bt.ricb.ricb_api.controllers;
 import bt.ricb.ricb_api.models.ClaimAuditEntity;
 import bt.ricb.ricb_api.models.ClaimDocumentsEntity;
 import bt.ricb.ricb_api.models.ClaimEntity;
-import bt.ricb.ricb_api.models.DTOs.ClaimActionDTO;
-import bt.ricb.ricb_api.models.DTOs.ClaimDocumentsDTO;
-import bt.ricb.ricb_api.models.DTOs.ClaimSummaryDTO;
-import bt.ricb.ricb_api.models.DTOs.FullClaimDTO;
+import bt.ricb.ricb_api.models.DTOs.*;
 import bt.ricb.ricb_api.services.ClaimService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -29,6 +26,37 @@ public class ClaimController {
         claimService.submitClaim(dto);
         return "Claim submitted successfully!";
     }
+
+    // Get all Dzongkhags
+    @GetMapping("/dzongkhags")
+    public List<String> getDzongkhagNames() {
+        return claimService.getDzongkhagNames();
+    }
+
+    // Get Gewogs by Dzongkhag ID
+    @GetMapping("/gewogs/{dzongkhagId}")
+    public List<String> getGewogNames(@PathVariable Integer dzongkhagId) {
+        return claimService.getGewogNamesByDzongkhag(dzongkhagId);
+    }
+
+    // Get Villages by Gewog ID
+    @GetMapping("/villages/{gewogId}")
+    public List<String> getVillageNames(@PathVariable Integer gewogId) {
+        return claimService.getVillageNamesByGewog(gewogId);
+    }
+
+    // Get all Banks
+    @GetMapping("/banks")
+    public List<String> getBankNames() {
+        return claimService.getBankNames();
+    }
+
+    // Get all Branches
+    @GetMapping("/branches")
+    public List<String> getBranchNames() {
+        return claimService.getBranchNames();
+    }
+
 
     @GetMapping("/{cin}/track")
     public Map<String, Object> getClaimDetails(@PathVariable String cin) {
@@ -54,14 +82,15 @@ public class ClaimController {
 
     // ===== 3. Full Claim Details =====
     @GetMapping("/{cin}")
-    public ResponseEntity<FullClaimDTO> getFullClaim(@PathVariable String cin) {
+    public ResponseEntity<ClaimResponseDRO> getFullClaim(@PathVariable String cin) {
         try {
-            FullClaimDTO fullClaim = claimService.getFullClaimByCin(cin);
+            ClaimResponseDRO fullClaim = claimService.getFullClaimByCin(cin);
             return ResponseEntity.ok(fullClaim);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
     }
+
 
     @PostMapping("/resubmit")
     public ResponseEntity<ClaimEntity> resubmitClaim(@RequestBody ClaimActionDTO dto) {

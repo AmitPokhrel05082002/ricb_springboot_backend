@@ -44,6 +44,12 @@ public class ClaimService {
 
     @Autowired
     private ApiService apiService;
+    @Autowired private DzongkhagRepository dzongkhagRepo;
+    @Autowired private GewogRepository gewogRepo;
+    @Autowired private VillageRepository villageRepo;
+    @Autowired private BankRepository bankRepo;
+    @Autowired private BranchRepository branchRepo;
+
 
     // ================= Claim Status Counts =================
     public Map<String, Long> getClaimStatusCounts() {
@@ -164,7 +170,12 @@ public class ClaimService {
                 .orElse(new PayeeEntity());
 
         payee.setClaimantId(claimant.getId());
-        payee.setSameAsClaimant(payeeDTO.getSameAsClaimant());
+// Convert Yes/No string from DTO → Integer for Entity
+        if ("Yes".equalsIgnoreCase(payeeDTO.getSameAsClaimant())) {
+            payee.setSameAsClaimant(1);
+        } else {
+            payee.setSameAsClaimant(0);
+        }
         payee.setCid(payeeDTO.getCid());
         payee.setAccountHolderName(payeeDTO.getAccountHolderName());
         payee.setAccountNumber(payeeDTO.getAccountNumber());
@@ -222,10 +233,6 @@ public class ClaimService {
 
             doc.setClaimId(claim.getId());
             doc.setZipFilePath(docDTO.getZipFilePath());
-
-            if (docDTO.getFileSizeKb() != null) {
-                doc.setFileSizeKb(docDTO.getFileSizeKb().intValue());
-            }
 
             doc.setUploadedAt(LocalDateTime.now());
 
@@ -294,7 +301,7 @@ public class ClaimService {
 
 
     // ================= Full Claim Details =================
-    public FullClaimDTO getFullClaimByCin(String cin) {
+    public ClaimResponseDRO getFullClaimByCin(String cin) {
 
         ClaimEntity claim = claimRepo.findByCin(cin)
                 .orElseThrow(() -> new RuntimeException("Claim not found"));
@@ -312,32 +319,31 @@ public class ClaimService {
                 .findByClaimId(claim.getId())
                 .orElse(null);
 
+        // Build ClaimantDTO
         ClaimantDTO claimantDTO = new ClaimantDTO();
         claimantDTO.setCid(claimant.getCid());
         claimantDTO.setFullName(claimant.getFullName());
         claimantDTO.setMobileNumber(claimant.getMobileNumber());
         claimantDTO.setEmailAddress(claimant.getEmailAddress());
+        claimantDTO.setDzongkhagName(claimantRepo.getDzongkhagNameById(claimant.getDzongkhagId()));
+        claimantDTO.setGewogName(claimantRepo.getGewogNameById(claimant.getGewogId()));
+        claimantDTO.setVillageName(claimantRepo.getVillageNameById(claimant.getVillageId()));
 
-        String dzongkhagName = claimantRepo.getDzongkhagNameById(claimant.getDzongkhagId());
-        String gewogName = claimantRepo.getGewogNameById(claimant.getGewogId());
-        String villageName = claimantRepo.getVillageNameById(claimant.getVillageId());
-        claimantDTO.setDzongkhagName(dzongkhagName);
-        claimantDTO.setGewogName(gewogName);
-        claimantDTO.setVillageName(villageName);
-
-
-
+        // Build PayeeDTO
         PayeeDTO payeeDTO = new PayeeDTO();
         payeeDTO.setCid(payee.getCid());
         payeeDTO.setAccountHolderName(payee.getAccountHolderName());
+        payeeDTO.setBankName(payeeRepo.getBankNameById(payee.getBankId()));
         payeeDTO.setAccountNumber(payee.getAccountNumber());
         payeeDTO.setMobileNumber(payee.getMobileNumber());
-        payeeDTO.setSameAsClaimant(payee.getSameAsClaimant());
+        payeeDTO.setSameAsClaimant(payee.getSameAsClaimant() == 1 ? "Yes" : "No");
 
+        // Build PolicyHolderDTO
         PolicyHolderDTO phDTO = new PolicyHolderDTO();
         phDTO.setCid(policyHolder.getCid());
         phDTO.setDateOfBirth(policyHolder.getDateOfBirth());
 
+        // Build ClaimDTO
         ClaimDTO claimDTO = new ClaimDTO();
         claimDTO.setNearestBranchName(claimRepo.getBranchNameById(claim.getNearestBranchId()));
         claimDTO.setClaimType(claim.getClaimType());
@@ -347,16 +353,15 @@ public class ClaimService {
         claimDTO.setDeathType(claim.getDeathType());
         claimDTO.setCauseOfDeath(claim.getCauseOfDeath());
 
-
+        // Build ClaimDocumentsDTO
         ClaimDocumentsDTO docDTO = null;
-
         if (documents != null) {
             docDTO = new ClaimDocumentsDTO();
             docDTO.setZipFilePath(documents.getZipFilePath());
-            docDTO.setFileSizeKb(documents.getFileSizeKb());
         }
 
-        FullClaimDTO response = new FullClaimDTO();
+        // Build Response
+        ClaimResponseDRO response = new ClaimResponseDRO();
         response.setClaimant(claimantDTO);
         response.setPayee(payeeDTO);
         response.setPolicyHolder(phDTO);
@@ -366,9 +371,9 @@ public class ClaimService {
         response.setCreatedAt(claim.getCreatedAt());
         response.setStatus(claim.getStatus());
 
-
         return response;
     }
+
 
     private void logAudit(ClaimEntity claim, String previousStatus, String newStatus, String remarks, Integer actionedBy) {
         ClaimAuditEntity audit = new ClaimAuditEntity();
@@ -442,7 +447,7 @@ public class ClaimService {
 
         ClaimActionEntity action = new ClaimActionEntity();
         action.setClaimId(claim.getId());
-        action.setActionType(ClaimActionEntity.ActionType.Approved); // or add Verified to enum
+        action.setActionType(ClaimActionEntity.ActionType.Verified);
         action.setRemarks(dto.getRemarks());
         action.setActionedBy(dto.getActionedBy());
         action.setActionedAt(LocalDateTime.now());
@@ -530,13 +535,48 @@ public class ClaimService {
 
         // Update fields
         entity.setZipFilePath(dto.getZipFilePath());
-        entity.setFileSizeKb(dto.getFileSizeKb());
         entity.setUploadedAt(LocalDateTime.now());
 
         return claimDocumentsRepo.save(entity);
 
     }
 
+    // Dzongkhags
+    public List<String> getDzongkhagNames() {
+        return dzongkhagRepo.findAll().stream()
+                .map(DzongkhagEntity::getDzongkhagName)
+                .collect(Collectors.toList());
     }
+
+    // Gewogs filtered by Dzongkhag
+    public List<String> getGewogNamesByDzongkhag(Integer dzongkhagId) {
+        return gewogRepo.findByDzongkhagId(dzongkhagId).stream()
+                .map(GewogEntity::getGewogName)
+                .collect(Collectors.toList());
+    }
+
+    // Villages filtered by Gewog
+    public List<String> getVillageNamesByGewog(Integer gewogId) {
+        return villageRepo.findByGewogId(gewogId).stream()
+                .map(VillageEntity::getVillageName)
+                .collect(Collectors.toList());
+    }
+
+    // Banks
+    public List<String> getBankNames() {
+        return bankRepo.findAll().stream()
+                .map(BankEntity::getName)
+                .collect(Collectors.toList());
+    }
+
+    // Branches
+    public List<String> getBranchNames() {
+        return branchRepo.findAll().stream()
+                .map(BranchEntity::getName)
+                .collect(Collectors.toList());
+    }
+
+
+}
 
 

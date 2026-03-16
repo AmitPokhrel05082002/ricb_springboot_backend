@@ -8,7 +8,5 @@ import java.util.Optional;
 
 @Repository
 public interface ClaimDocumentsRepository extends JpaRepository<ClaimDocumentsEntity, Integer> {
-
     Optional<ClaimDocumentsEntity> findByClaimId(Integer claimId);
-
 }

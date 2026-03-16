@@ -23,6 +23,11 @@ public class ClaimDocumentsEntity {
     @Column(name="uploaded_at")
     private LocalDateTime uploadedAt;
 
+    @Lob
+    @Column(name="file_data", columnDefinition = "BLOB")
+    private byte[] fileData;
+
+
     public ClaimDocumentsEntity(){}
 
     public Integer getId(){ return id; }
