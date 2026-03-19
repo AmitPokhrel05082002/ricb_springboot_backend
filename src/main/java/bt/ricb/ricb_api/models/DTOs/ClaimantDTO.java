@@ -6,9 +6,9 @@ public class ClaimantDTO {
     private String fullName;
     private String mobileNumber;
     private String emailAddress;
-    private String dzongkhagName;  // frontend provides names
-    private String gewogName;
-    private String villageName;
+    private Integer dzongkhagId;  // frontend provides names
+    private Integer gewogId;
+    private Integer villageId;
 
     // Getters and Setters
     public String getCid() { return cid; }
@@ -23,12 +23,12 @@ public class ClaimantDTO {
     public String getEmailAddress() { return emailAddress; }
     public void setEmailAddress(String emailAddress) { this.emailAddress = emailAddress; }
 
-    public String getDzongkhagName() { return dzongkhagName; }
-    public void setDzongkhagName(String dzongkhagName) { this.dzongkhagName = dzongkhagName; }
+    public Integer getDzongkhagId() { return dzongkhagId; }
+    public void setDzongkhagId(Integer dzongkhagId) { this.dzongkhagId = dzongkhagId; }
 
-    public String getGewogName() { return gewogName; }
-    public void setGewogName(String gewogName) { this.gewogName = gewogName; }
+    public Integer getGewogId() { return gewogId; }
+    public void setGewogId(Integer gewogId) { this.gewogId = gewogId; }
 
-    public String getVillageName() { return villageName; }
-    public void setVillageName(String villageName) { this.villageName = villageName; }
+    public Integer getVillageId() { return villageId; }
+    public void setVillageId(Integer villageId) { this.villageId = villageId; }
 }

@@ -10,7 +10,10 @@ public class ClaimDTO {
     private String placeOfDeath;
     private String deathType;   // Natural, Accidental, Suicide
     private String causeOfDeath;
-    private String nearestBranchName;;
+    private LocalDate dateOfLoss;
+    private String placeOfLoss;
+    private String causeOfLoss;
+    private Integer nearestBranchId;
 
     // Getters and Setters
     public String getClaimType() { return claimType; }
@@ -31,6 +34,15 @@ public class ClaimDTO {
     public String getCauseOfDeath() { return causeOfDeath; }
     public void setCauseOfDeath(String causeOfDeath) { this.causeOfDeath = causeOfDeath; }
 
-    public String getNearestBranchName() { return nearestBranchName; }
-    public void setNearestBranchName(String nearestBranchName) { this.nearestBranchName = nearestBranchName; }
+    public LocalDate getDateOfLoss() { return dateOfLoss; }
+    public void setDateOfLoss(LocalDate dateOfLoss) { this.dateOfLoss = dateOfLoss; }
+
+    public String getPlaceOfLoss() { return placeOfLoss; }
+    public void setPlaceOfLoss(String placeOfLoss) { this.placeOfLoss = placeOfLoss; }
+
+    public String getCauseOfLoss() { return causeOfLoss; }
+    public void setCauseOfLoss(String causeOfLoss) { this.causeOfLoss = causeOfLoss; }
+
+    public Integer getNearestBranchId() { return nearestBranchId; }
+    public void setNearestBranchId(Integer nearestBranchId) { this.nearestBranchId = nearestBranchId; }
 }

@@ -19,6 +19,7 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, Integer> {
 
     // Get claim by CIN
     Optional<ClaimEntity> findByCin(String cin);
+    Optional<ClaimEntity> findById(Integer id);
 
     @Query(value = "SELECT cin FROM claims WHERE cin LIKE CONCAT('CIN-', :year, '%') ORDER BY id DESC LIMIT 1", nativeQuery = true)
     String getLastCinByYear(@Param("year") int year);

@@ -5,8 +5,15 @@ import bt.ricb.ricb_api.models.DTOs.*;
 import bt.ricb.ricb_api.repository.*;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -14,6 +21,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class ClaimService {
+    RestTemplate restTemplate;
 
     @Autowired
     private ClaimantRepository claimantRepo;
@@ -38,6 +46,9 @@ public class ClaimService {
 
     @Autowired
     private ClaimAuditRepository claimAuditRepo;
+
+    @Autowired
+    private S3Service s3Service;
 
     @Autowired
     private EmailService emailService;
@@ -87,7 +98,7 @@ public class ClaimService {
 
     // ================= Submit Full Claim =================
     @Transactional
-    public void submitClaim(FullClaimDTO dto) {
+    public Map<String, Object> submitClaim(FullClaimDTO dto, MultipartFile file) {
 
         // ================= Claimant =================
         ClaimantDTO claimantDTO = dto.getClaimant();
@@ -100,27 +111,16 @@ public class ClaimService {
         claimant.setFullName(claimantDTO.getFullName());
         claimant.setMobileNumber(claimantDTO.getMobileNumber());
         claimant.setEmailAddress(claimantDTO.getEmailAddress());
-
-        claimant.setDzongkhagId(
-                claimantRepo.getDzongkhagIdByName(claimantDTO.getDzongkhagName())
-        );
-
-        claimant.setGewogId(
-                claimantRepo.getGewogIdByName(claimantDTO.getGewogName())
-        );
-
-        claimant.setVillageId(
-                claimantRepo.getVillageIdByName(claimantDTO.getVillageName())
-        );
+        claimant.setDzongkhagId(claimantDTO.getDzongkhagId());
+        claimant.setGewogId(claimantDTO.getGewogId());
+        claimant.setVillageId(claimantDTO.getVillageId());
 
         claimant.setUpdatedAt(LocalDateTime.now());
-
         if (claimant.getId() == null) {
             claimant.setCreatedAt(LocalDateTime.now());
         }
 
         claimantRepo.save(claimant);
-
 
         // ================= Policy Holder =================
         PolicyHolderDTO phDTO = dto.getPolicyHolder();
@@ -140,28 +140,6 @@ public class ClaimService {
 
         policyHolderRepo.save(policyHolder);
 
-
-        // ================= Policy =================
-//        PolicyDTO policyDTO = dto.getPolicy();
-//
-//        if (policyDTO != null) {
-//
-//            PolicyEntity policy = new PolicyEntity();
-//
-//            policy.setPolicyHolderId(policyHolder.getId());
-//            policy.setPolicyName(policyDTO.getPolicyName());
-//            policy.setPolicyNumber(policyDTO.getPolicyNumber());
-//            policy.setIntimationDate(policyDTO.getIntimationDate());
-//            policy.setNomineeName(policyDTO.getNomineeName());
-//            policy.setRelation(policyDTO.getRelation());
-//            policy.setSumAssured(policyDTO.getSumAssured());
-//            policy.setStatus(policyDTO.getStatus());
-//            policy.setCreatedAt(LocalDateTime.now());
-//
-//            policyRepo.save(policy);
-//        }
-
-
         // ================= Payee =================
         PayeeDTO payeeDTO = dto.getPayee();
 
@@ -170,113 +148,149 @@ public class ClaimService {
                 .orElse(new PayeeEntity());
 
         payee.setClaimantId(claimant.getId());
-// Convert Yes/No string from DTO → Integer for Entity
-        if ("Yes".equalsIgnoreCase(payeeDTO.getSameAsClaimant())) {
-            payee.setSameAsClaimant(1);
-        } else {
-            payee.setSameAsClaimant(0);
-        }
+        payee.setSameAsClaimant("Yes".equalsIgnoreCase(payeeDTO.getSameAsClaimant()) ? 1 : 0);
         payee.setCid(payeeDTO.getCid());
         payee.setAccountHolderName(payeeDTO.getAccountHolderName());
         payee.setAccountNumber(payeeDTO.getAccountNumber());
         payee.setMobileNumber(payeeDTO.getMobileNumber());
-
-        payee.setBankId(
-                payeeRepo.getBankIdByName(payeeDTO.getBankName())
-        );
+        payee.setBankId(payeeDTO.getBankId());
 
         payee.setUpdatedAt(LocalDateTime.now());
-
         if (payee.getId() == null) {
             payee.setCreatedAt(LocalDateTime.now());
         }
 
         payeeRepo.save(payee);
 
-
         // ================= Claim =================
         ClaimDTO claimDTO = dto.getClaim();
-
         ClaimEntity claim = new ClaimEntity();
 
         claim.setCin(generateCin());
         claim.setClaimantId(claimant.getId());
         claim.setPayeeId(payee.getId());
         claim.setPolicyHolderId(policyHolder.getId());
-
-        claim.setNearestBranchId(
-                claimRepo.getBranchIdByName(claimDTO.getNearestBranchName())
-        );
+        claim.setNearestBranchId(claimDTO.getNearestBranchId());
 
         claim.setClaimType(claimDTO.getClaimType());
-        claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
 
-        claim.setDateOfDeath(claimDTO.getDateOfDeath());
-        claim.setPlaceOfDeath(claimDTO.getPlaceOfDeath());
-        claim.setDeathType(claimDTO.getDeathType());
-        claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
+// Conditional nulling based on claim type
+        if ("Death".equalsIgnoreCase(claimDTO.getClaimType())) {
+            // For Death claim, null PTD fields
+            claim.setG2cApplicationNumber(null);
+            claim.setDateOfDeath(claimDTO.getDateOfDeath());  // optional if you want to allow death date
+            claim.setPlaceOfDeath(claimDTO.getPlaceOfDeath());
+            claim.setDeathType(claimDTO.getDeathType());
+            claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
+
+            // PTD fields null
+            claim.setDateOfLoss(null);
+            claim.setPlaceOfLoss(null);
+            claim.setCauseOfLoss(null);
+
+        } else if ("Permanent Total Disability".equalsIgnoreCase(claimDTO.getClaimType())) {
+            // For PTD, null Death fields
+            claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
+            claim.setDateOfDeath(null);
+            claim.setPlaceOfDeath(null);
+            claim.setDeathType(null);
+            claim.setCauseOfDeath(null);
+
+            // Loss fields
+            claim.setDateOfLoss(claimDTO.getDateOfLoss());
+            claim.setPlaceOfLoss(claimDTO.getPlaceOfLoss());
+            claim.setCauseOfLoss(claimDTO.getCauseOfLoss());
+        } else {
+            // For other claim types, store as provided or handle accordingly
+            claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
+            claim.setDateOfDeath(claimDTO.getDateOfDeath());
+            claim.setPlaceOfDeath(claimDTO.getPlaceOfDeath());
+            claim.setDeathType(claimDTO.getDeathType());
+            claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
+
+            claim.setDateOfLoss(claimDTO.getDateOfLoss());
+            claim.setPlaceOfLoss(claimDTO.getPlaceOfLoss());
+            claim.setCauseOfLoss(claimDTO.getCauseOfLoss());
+        }
 
         claim.setStatus("Pending");
-
         claim.setCreatedAt(LocalDateTime.now());
         claim.setUpdatedAt(LocalDateTime.now());
 
-        claimRepo.save(claim);
-
-
+        claimRepo.saveAndFlush(claim);
         // ================= Documents =================
-        ClaimDocumentsDTO docDTO = dto.getDocuments();
+        if (file != null && !file.isEmpty()) {
 
-        if (docDTO != null) {
+            String originalFileName = file.getOriginalFilename();
 
-            ClaimDocumentsEntity doc = new ClaimDocumentsEntity();
+            if (originalFileName == null || !originalFileName.toLowerCase().endsWith(".zip")) {
+                throw new RuntimeException("Invalid file type. Only ZIP files are allowed.");
+            }
 
-            doc.setClaimId(claim.getId());
-            doc.setZipFilePath(docDTO.getZipFilePath());
+            long maxSizeBytes = 50L * 1024 * 1024;
+            if (file.getSize() > maxSizeBytes) {
+                throw new RuntimeException("File size exceeds 50 MB.");
+            }
 
-            doc.setUploadedAt(LocalDateTime.now());
+            try {
+                String fileName = "claims/" + claim.getCin() + "_" + originalFileName;
 
-            claimDocumentsRepo.save(doc);
+                String fileUrl = s3Service.uploadFile(
+                        fileName,
+                        file.getInputStream(),
+                        file.getSize()
+                );
+
+                ClaimDocumentsEntity doc = new ClaimDocumentsEntity();
+                doc.setClaimId(claim.getId());
+                doc.setZipFilePath(fileUrl);
+                doc.setFileSizeKb((int) (file.getSize() / 1024));
+                doc.setUploadedAt(LocalDateTime.now());
+
+                claimDocumentsRepo.save(doc);
+
+            } catch (Exception e) {
+                throw new RuntimeException("File upload failed: " + e.getMessage());
+            }
+
+        } else {
+            throw new RuntimeException("No file uploaded. A ZIP file is required.");
         }
 
-
         // ================= Notification =================
-
         String cin = claim.getCin();
 
-        String smsMessage = "Your claim has been submitted successfully. CIN: " + cin;
-
-        String emailSubject = "Insurance Claim Submitted";
-
-        String emailBody =
-                "Dear " + claimant.getFullName() + ",\n\n" +
-                        "Your insurance claim has been submitted successfully.\n\n" +
-                        "CIN Number: " + cin + "\n\n" +
-                        "Please keep this CIN number for claim tracking.\n\n" +
-                        "Thank you.";
-
         try {
+            String mobile = claimant.getMobileNumber();
 
-            if (claimant.getMobileNumber() != null && !claimant.getMobileNumber().isBlank()) {
-                apiService.sendSms(smsMessage, claimant.getMobileNumber());
+            if (mobile != null && !mobile.isBlank()) {
+
+                if (mobile.startsWith("17")) {
+                    apiService.sendSms("Your claim submitted. CIN: " + cin, mobile);
+
+                } else if (mobile.startsWith("77")) {
+                    apiService.sendSmsTcell("Your claim submitted. CIN: " + cin, mobile);
+                }
             }
 
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
                 emailService.sendEmail(
                         claimant.getEmailAddress(),
-                        emailSubject,
-                        emailBody,
+                        "Insurance Claim Submitted",
+                        "Your claim has been submitted successfully. CIN: " + cin,
                         null
                 );
             }
 
         } catch (Exception e) {
-
-            System.out.println("Notification failed: " + e.getMessage());
+            e.printStackTrace();
         }
 
-    }
-
+        return Map.of(
+                "cin", claim.getCin(),
+                "mobileNumber", claimant.getMobileNumber(),
+                "email", claimant.getEmailAddress()
+        );    }
 
     // ================= Claim Summary =================
     public List<ClaimSummaryDTO> getAllClaimSummaries() {
@@ -303,9 +317,11 @@ public class ClaimService {
     // ================= Full Claim Details =================
     public ClaimResponseDRO getFullClaimByCin(String cin) {
 
+        // Fetch claim
         ClaimEntity claim = claimRepo.findByCin(cin)
-                .orElseThrow(() -> new RuntimeException("Claim not found"));
+                .orElseThrow(() -> new RuntimeException("Claim not found for CIN: " + cin));
 
+        // Fetch related entities
         ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
                 .orElseThrow(() -> new RuntimeException("Claimant not found"));
 
@@ -315,25 +331,21 @@ public class ClaimService {
         PolicyHolderEntity policyHolder = policyHolderRepo.findById(claim.getPolicyHolderId())
                 .orElseThrow(() -> new RuntimeException("Policy holder not found"));
 
-        ClaimDocumentsEntity documents = claimDocumentsRepo
-                .findByClaimId(claim.getId())
-                .orElse(null);
-
         // Build ClaimantDTO
         ClaimantDTO claimantDTO = new ClaimantDTO();
         claimantDTO.setCid(claimant.getCid());
         claimantDTO.setFullName(claimant.getFullName());
         claimantDTO.setMobileNumber(claimant.getMobileNumber());
         claimantDTO.setEmailAddress(claimant.getEmailAddress());
-        claimantDTO.setDzongkhagName(claimantRepo.getDzongkhagNameById(claimant.getDzongkhagId()));
-        claimantDTO.setGewogName(claimantRepo.getGewogNameById(claimant.getGewogId()));
-        claimantDTO.setVillageName(claimantRepo.getVillageNameById(claimant.getVillageId()));
+        claimantDTO.setDzongkhagId(claimant.getDzongkhagId());
+        claimantDTO.setGewogId(claimant.getGewogId());
+        claimantDTO.setVillageId(claimant.getVillageId());
 
         // Build PayeeDTO
         PayeeDTO payeeDTO = new PayeeDTO();
         payeeDTO.setCid(payee.getCid());
         payeeDTO.setAccountHolderName(payee.getAccountHolderName());
-        payeeDTO.setBankName(payeeRepo.getBankNameById(payee.getBankId()));
+        payeeDTO.setBankId(payee.getBankId());
         payeeDTO.setAccountNumber(payee.getAccountNumber());
         payeeDTO.setMobileNumber(payee.getMobileNumber());
         payeeDTO.setSameAsClaimant(payee.getSameAsClaimant() == 1 ? "Yes" : "No");
@@ -345,20 +357,16 @@ public class ClaimService {
 
         // Build ClaimDTO
         ClaimDTO claimDTO = new ClaimDTO();
-        claimDTO.setNearestBranchName(claimRepo.getBranchNameById(claim.getNearestBranchId()));
+        claimDTO.setNearestBranchId(claim.getNearestBranchId());
         claimDTO.setClaimType(claim.getClaimType());
         claimDTO.setG2cApplicationNumber(claim.getG2cApplicationNumber());
         claimDTO.setDateOfDeath(claim.getDateOfDeath());
         claimDTO.setPlaceOfDeath(claim.getPlaceOfDeath());
         claimDTO.setDeathType(claim.getDeathType());
         claimDTO.setCauseOfDeath(claim.getCauseOfDeath());
-
-        // Build ClaimDocumentsDTO
-        ClaimDocumentsDTO docDTO = null;
-        if (documents != null) {
-            docDTO = new ClaimDocumentsDTO();
-            docDTO.setZipFilePath(documents.getZipFilePath());
-        }
+        claimDTO.setDateOfLoss(claim.getDateOfLoss());
+        claimDTO.setPlaceOfLoss(claim.getPlaceOfLoss());
+        claimDTO.setCauseOfLoss(claim.getCauseOfLoss());
 
         // Build Response
         ClaimResponseDRO response = new ClaimResponseDRO();
@@ -366,11 +374,9 @@ public class ClaimService {
         response.setPayee(payeeDTO);
         response.setPolicyHolder(phDTO);
         response.setClaim(claimDTO);
-        response.setDocuments(docDTO);
         response.setCin(claim.getCin());
         response.setCreatedAt(claim.getCreatedAt());
         response.setStatus(claim.getStatus());
-
         return response;
     }
 
@@ -485,98 +491,179 @@ public class ClaimService {
     }
 
     // ================= Track Records =================
+    private final ClaimRepository claimRepository;
+    private final ClaimAuditRepository claimAuditRepository;
 
+    public ClaimService(ClaimRepository claimRepository, ClaimAuditRepository claimAuditRepository) {
+        this.claimRepository = claimRepository;
+        this.claimAuditRepository = claimAuditRepository;
+    }
 
-        private final ClaimRepository claimRepository;
-        private final ClaimAuditRepository claimAuditRepository;
-
-        public ClaimService(ClaimRepository claimRepository, ClaimAuditRepository claimAuditRepository) {
-            this.claimRepository = claimRepository;
-            this.claimAuditRepository = claimAuditRepository;
-        }
-
-        public Map<String, Object> getClaimDetails(String cin) {
-            ClaimEntity claim = claimRepository.findByCin(cin)
-                    .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + cin));
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("cin", claim.getCin());
-            response.put("createdAt", claim.getCreatedAt());
-            response.put("updatedAt", claim.getUpdatedAt());
-            response.put("status", claim.getStatus());
-            response.put("remarks", claim.getRemarks());
-
-            List<Map<String, Object>> auditHistory = new ArrayList<>();
-            List<ClaimAuditEntity> audits = claimAuditRepository.findByCinOrderByActionedAtDesc(cin);
-
-            for (ClaimAuditEntity audit : audits) {
-                Map<String, Object> auditMap = new HashMap<>();
-                auditMap.put("actionedAt", audit.getActionedAt());
-                auditMap.put("newStatus", audit.getNewStatus());
-                auditHistory.add(auditMap);
-            }
-
-            response.put("auditHistory", auditHistory);
-
-            return response;
-        }
-
-    // ================= Update Document  =================
-
-    @Transactional
-    public ClaimDocumentsEntity updateClaimDocumentByCin(String cin, ClaimDocumentsDTO dto) {
-        // Find claim by CIN
-        ClaimEntity claim = claimRepo.findByCin(cin)
+    public Map<String, Object> getClaimDetails(String cin) {
+        ClaimEntity claim = claimRepository.findByCin(cin)
                 .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + cin));
 
-        // Find document by claimId
-        ClaimDocumentsEntity entity = claimDocumentsRepo.findByClaimId(claim.getId())
-                .orElseThrow(() -> new RuntimeException("Claim document not found for CIN: " + cin));
+        Map<String, Object> response = new HashMap<>();
+        response.put("cin", claim.getCin());
+        response.put("createdAt", claim.getCreatedAt());
+        response.put("updatedAt", claim.getUpdatedAt());
+        response.put("status", claim.getStatus());
+        response.put("remarks", claim.getRemarks());
 
-        // Update fields
-        entity.setZipFilePath(dto.getZipFilePath());
-        entity.setUploadedAt(LocalDateTime.now());
+        List<Map<String, Object>> auditHistory = new ArrayList<>();
+        List<ClaimAuditEntity> audits = claimAuditRepository.findByCinOrderByActionedAtDesc(cin);
 
-        return claimDocumentsRepo.save(entity);
+        for (ClaimAuditEntity audit : audits) {
+            Map<String, Object> auditMap = new HashMap<>();
+            auditMap.put("actionedAt", audit.getActionedAt());
+            auditMap.put("newStatus", audit.getNewStatus());
+            auditHistory.add(auditMap);
+        }
 
+        response.put("auditHistory", auditHistory);
+
+        return response;
     }
 
     // Dzongkhags
-    public List<String> getDzongkhagNames() {
+    public List<DzongkhagDTO> getDzongkhagNames() {
         return dzongkhagRepo.findAll().stream()
-                .map(DzongkhagEntity::getDzongkhagName)
+                .map(d -> {
+                    DzongkhagDTO dto = new DzongkhagDTO();
+                    dto.setDzongkhagId(d.getDzongkhagId());
+                    dto.setDzongkhagName(d.getDzongkhagName());
+                    dto.setIsActive(d.getIsActive());
+                    dto.setCreatedAt(d.getCreatedAt());
+                    dto.setUpdatedAt(d.getUpdatedAt());
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
     // Gewogs filtered by Dzongkhag
-    public List<String> getGewogNamesByDzongkhag(Integer dzongkhagId) {
+    public List<GewogDTO> getGewogsByDzongkhag(Integer dzongkhagId) {
         return gewogRepo.findByDzongkhagId(dzongkhagId).stream()
-                .map(GewogEntity::getGewogName)
+                .map(g -> {
+                    GewogDTO dto = new GewogDTO();
+                    dto.setGewogId(g.getGewogId());
+                    dto.setDzongkhagId(g.getDzongkhagId());
+                    dto.setGewogName(g.getGewogName());
+                    dto.setIsActive(g.getIsActive());
+                    dto.setCreatedAt(g.getCreatedAt());
+                    dto.setUpdatedAt(g.getUpdatedAt());
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
     // Villages filtered by Gewog
-    public List<String> getVillageNamesByGewog(Integer gewogId) {
+    public List<VillageDTO> getVillagesByGewog(Integer gewogId) {
         return villageRepo.findByGewogId(gewogId).stream()
-                .map(VillageEntity::getVillageName)
+                .map(v -> {
+                    VillageDTO dto = new VillageDTO();
+                    dto.setVillageId(v.getVillageId());
+                    dto.setGewogId(v.getGewogId());
+                    dto.setVillageName(v.getVillageName());
+                    dto.setIsActive(v.getIsActive());
+                    dto.setCreatedAt(v.getCreatedAt());
+                    dto.setUpdatedAt(v.getUpdatedAt());
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
     // Banks
-    public List<String> getBankNames() {
+    public List<BankDTO> getBanks() {
         return bankRepo.findAll().stream()
-                .map(BankEntity::getName)
+                .map(b -> {
+                    BankDTO dto = new BankDTO();
+                    dto.setId(b.getId());
+                    dto.setName(b.getName());
+                    dto.setCreatedAt(b.getCreatedAt());
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
     // Branches
-    public List<String> getBranchNames() {
+    public List<BranchDTO> getBranches() {
         return branchRepo.findAll().stream()
-                .map(BranchEntity::getName)
+                .map(b -> {
+                    BranchDTO dto = new BranchDTO();
+                    dto.setId(b.getId());
+                    dto.setName(b.getName());
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
+    /**
+     * Download claim ZIP file by CIN
+     */
+    public ResponseEntity<ByteArrayResource> downloadClaimFileByCin(String cin) {
 
+        // Find claim by CIN
+        ClaimEntity claim = claimRepo.findByCin(cin)
+                .orElseThrow(() -> new RuntimeException("Claim with CIN " + cin + " not found"));
 
+        // Find document by claim ID
+        ClaimDocumentsEntity doc = claimDocumentsRepo.findByClaimId(claim.getId())
+                .orElseThrow(() -> new RuntimeException("No document found for CIN " + cin));
+
+        // Extract S3 key
+        String key = doc.getZipFilePath();
+        if(key.startsWith("https://")) {
+            key = key.substring(key.indexOf("claims/"));
+        }
+
+        // Get file from S3
+        byte[] fileBytes = s3Service.downloadFile(key);
+
+        if (fileBytes == null || fileBytes.length == 0) {
+            throw new RuntimeException("File is empty or not found in S3 for CIN " + cin);
+        }
+
+        ByteArrayResource resource = new ByteArrayResource(fileBytes);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + extractFileName(doc.getZipFilePath()) + "\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentLength(fileBytes.length)
+                .body(resource);
+    }
+
+    private String extractFileName(String path) {
+        if (path == null) return "file.zip";
+        return path.substring(path.lastIndexOf("/") + 1);
+    }
+
+    // ================= Update Claim Document =================
+    public void updateClaimDocumentByCin(String cin, MultipartFile file) throws Exception {
+
+        // 1️⃣ Find claim by CIN
+        ClaimEntity claim = claimRepo.findByCin(cin)
+                .orElseThrow(() -> new RuntimeException("Claim with CIN " + cin + " not found"));
+
+        // 2️⃣ Find existing document
+        ClaimDocumentsEntity doc = claimDocumentsRepo.findByClaimId(claim.getId())
+                .orElseThrow(() -> new RuntimeException("No existing document found for CIN " + cin));
+
+        // 3️⃣ Extract folder path from existing file
+        // Example: https://ricb-my-data.s3.amazonaws.com/claims/c91c96c6-a473-4216-8386-a1d036609da7_claims/CIN-20260008_RICB.zip
+        String oldPath = doc.getZipFilePath();
+        String folderPath = oldPath.substring(0, oldPath.lastIndexOf("/")); // up to "..._claims"
+
+        // 4️⃣ Create new file key in the same folder
+        String newFileName = cin + "_RICB.zip";
+        String newS3Key = folderPath + "/" + newFileName;
+
+        // 5️⃣ Upload new file (overwrite old file)
+        s3Service.uploadFileWithCustomName(newS3Key, file.getInputStream(), file.getSize());
+
+        // 6️⃣ Update document info
+        doc.setZipFilePath(newS3Key); // path remains same format
+        doc.setFileSizeKb((int) (file.getSize() / 1024));
+        doc.setUploadedAt(LocalDateTime.now());
+
+        claimDocumentsRepo.save(doc);
+    }
 }
-
-

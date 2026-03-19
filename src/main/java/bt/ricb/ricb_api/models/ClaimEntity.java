@@ -42,6 +42,15 @@ public class ClaimEntity {
     @Column(name="cause_of_death")
     private String causeOfDeath;
 
+    @Column(name="date_of_loss")
+    private LocalDate dateOfLoss;
+
+    @Column(name="place_of_loss")
+    private String placeOfLoss;
+
+    @Column(name="cause_of_loss")
+    private String causeOfLoss;
+
     @Column(name="status", nullable = false)
     private String status;
 
@@ -96,6 +105,15 @@ public class ClaimEntity {
 
     public String getCauseOfDeath() { return causeOfDeath; }
     public void setCauseOfDeath(String causeOfDeath) { this.causeOfDeath = causeOfDeath; }
+
+    public LocalDate getDateOfLoss() { return dateOfLoss; }
+    public void setDateOfLoss(LocalDate dateOfLoss) { this.dateOfLoss = dateOfLoss; }
+
+    public String getPlaceOfLoss() { return placeOfLoss; }
+    public void setPlaceOfLoss(String placeOfLoss) { this.placeOfLoss = placeOfLoss; }
+
+    public String getCauseOfLoss() { return causeOfLoss; }
+    public void setCauseOfLoss(String causeOfLoss) { this.causeOfLoss = causeOfLoss; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

@@ -5,7 +5,7 @@ public class PayeeDTO {
     private String sameAsClaimant; // 1 = Yes, 0 = No
     private String cid;
     private String accountHolderName;
-    private String bankName;   // frontend provides name
+    private Integer bankId;   // frontend provides name
     private String accountNumber;
     private String mobileNumber;
 
@@ -20,8 +20,8 @@ public class PayeeDTO {
     public String getAccountHolderName() { return accountHolderName; }
     public void setAccountHolderName(String accountHolderName) { this.accountHolderName = accountHolderName; }
 
-    public String getBankName() { return bankName; }
-    public void setBankName(String bankName) { this.bankName = bankName; }
+    public Integer getBankId() { return bankId; }
+    public void setBankId(Integer bankId) { this.bankId = bankId; }
 
     public String getAccountNumber() { return accountNumber; }
     public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }

@@ -1,15 +1,20 @@
 package bt.ricb.ricb_api.controllers;
 
-import bt.ricb.ricb_api.models.ClaimAuditEntity;
-import bt.ricb.ricb_api.models.ClaimDocumentsEntity;
 import bt.ricb.ricb_api.models.ClaimEntity;
 import bt.ricb.ricb_api.models.DTOs.*;
 import bt.ricb.ricb_api.services.ClaimService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -21,40 +26,102 @@ public class ClaimController {
     private ClaimService claimService;
 
     // ================= Submit a new claim =================
-    @PostMapping()
-    public String submitClaim(@RequestBody FullClaimDTO dto) {
-        claimService.submitClaim(dto);
-        return "Claim submitted successfully!";
+
+//    @PostMapping("/submitdep")
+//    public String submitClaim(@RequestBody FullClaimDTO dto) {
+//        claimService.submitClaimDep(dto);
+//        return "Claim submitted successfully!";
+//    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> submitClaim(
+            @RequestPart("data") String data,
+            @RequestPart("file") MultipartFile file
+    ) {
+        try {
+            // ================= Validate File =================
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "No file uploaded. A ZIP file is required.",
+                        "timestamp", LocalDateTime.now()
+                ));
+            }
+
+            String fileName = file.getOriginalFilename();
+            if (fileName == null || !fileName.toLowerCase().endsWith(".zip")) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "Invalid file type. Only ZIP files are allowed.",
+                        "timestamp", LocalDateTime.now()
+                ));
+            }
+
+            long maxSizeBytes = 50L * 1024 * 1024;
+            if (file.getSize() > maxSizeBytes) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "File size exceeds 50 MB.",
+                        "timestamp", LocalDateTime.now()
+                ));
+            }
+
+            // ================= Parse JSON =================
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.registerModule(new JavaTimeModule());
+            mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+            FullClaimDTO dto = mapper.readValue(data, FullClaimDTO.class);
+
+            // ================= Call Service =================
+            Map<String, Object> result = claimService.submitClaim(dto, file);
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "SUCCESS",
+                    "message", "Claim submitted successfully",
+                    "data", result,
+                    "timestamp", LocalDateTime.now()
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "status", "ERROR",
+                    "message", "Claim submission failed",
+                    "error", e.getMessage(),
+                    "timestamp", LocalDateTime.now()
+            ));
+        }
     }
+
 
     // Get all Dzongkhags
     @GetMapping("/dzongkhags")
-    public List<String> getDzongkhagNames() {
+    public List<DzongkhagDTO> getDzongkhagNames() {
         return claimService.getDzongkhagNames();
     }
 
     // Get Gewogs by Dzongkhag ID
     @GetMapping("/gewogs/{dzongkhagId}")
-    public List<String> getGewogNames(@PathVariable Integer dzongkhagId) {
-        return claimService.getGewogNamesByDzongkhag(dzongkhagId);
+    public List<GewogDTO> getGewogs(@PathVariable Integer dzongkhagId) {
+        return claimService.getGewogsByDzongkhag(dzongkhagId);
     }
 
     // Get Villages by Gewog ID
     @GetMapping("/villages/{gewogId}")
-    public List<String> getVillageNames(@PathVariable Integer gewogId) {
-        return claimService.getVillageNamesByGewog(gewogId);
+    public List<VillageDTO> getVillages(@PathVariable Integer gewogId) {
+        return claimService.getVillagesByGewog(gewogId);
     }
 
     // Get all Banks
     @GetMapping("/banks")
-    public List<String> getBankNames() {
-        return claimService.getBankNames();
+    public List<BankDTO> getBanks() {
+        return claimService.getBanks();
     }
 
     // Get all Branches
     @GetMapping("/branches")
-    public List<String> getBranchNames() {
-        return claimService.getBranchNames();
+    public List<BranchDTO> getBranches() {
+        return claimService.getBranches();
     }
 
 
@@ -91,7 +158,6 @@ public class ClaimController {
         }
     }
 
-
     @PostMapping("/resubmit")
     public ResponseEntity<ClaimEntity> resubmitClaim(@RequestBody ClaimActionDTO dto) {
         ClaimEntity updatedClaim = claimService.resubmitClaim(dto);
@@ -116,14 +182,28 @@ public class ClaimController {
         return ResponseEntity.ok(updatedClaim);
     }
 
-    @PutMapping("/{cin}/documents")
-    public ClaimDocumentsEntity updateClaimDocumentByCin(@PathVariable String cin,
-                                                         @RequestBody ClaimDocumentsDTO dto) {
-        return claimService.updateClaimDocumentByCin(cin, dto);
+    @GetMapping("/download/{cin}")
+    public ResponseEntity<ByteArrayResource> downloadClaim(@PathVariable String cin) {
+        return claimService.downloadClaimFileByCin(cin);
     }
 
-    @GetMapping("/{cin}/audit")
-    public ResponseEntity<List<ClaimAuditEntity>> getClaimAudit(@PathVariable String cin) {
-        return ResponseEntity.ok(claimService.getClaimAuditTrail(cin));
+    @PostMapping(value = "/update-document/{cin}", consumes = "multipart/form-data")
+    public ResponseEntity<String> updateClaimDocument(
+            @PathVariable String cin,
+            @RequestPart("file") MultipartFile file) throws Exception {
+
+        // Only accept ZIP files
+        if (!file.getOriginalFilename().endsWith(".zip")) {
+            return ResponseEntity.badRequest().body("Only ZIP files are allowed");
+        }
+
+        // Max 50MB
+        if (file.getSize() > 50 * 1024 * 1024) {
+            return ResponseEntity.badRequest().body("File size must be less than 50MB");
+        }
+
+        claimService.updateClaimDocumentByCin(cin, file);
+
+        return ResponseEntity.ok("Document updated successfully!");
     }
 }

@@ -8,7 +8,6 @@ public class FullClaimDTO {
 //    private PolicyDTO policy;
     private ClaimDTO claim;
     private PayeeDTO payee;
-    private ClaimDocumentsDTO documents;
 
 
 
@@ -25,8 +24,6 @@ public class FullClaimDTO {
     public ClaimDTO getClaim() { return claim; }
     public void setClaim(ClaimDTO claim) { this.claim = claim; }
 
-    public ClaimDocumentsDTO getDocuments() { return documents; }
-    public void setDocuments(ClaimDocumentsDTO documents) { this.documents = documents; }
 
 //    public PolicyDTO getPolicy() { return policy; }
 //    public void setPolicy(PolicyDTO policy) { this.policy = policy; }
