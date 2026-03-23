@@ -75,4 +75,11 @@ public class S3Service {
             throw new RuntimeException("Failed to download file from S3: " + e.getMessage(), e);
         }
     }
+    // ================= Delete file from S3 =================
+    public void deleteFile(String key) {
+        try {
+            s3Client.deleteObject(builder -> builder.bucket(bucketName).key(key));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete file from S3: " + e.getMessage(), e);
+        }}
 }

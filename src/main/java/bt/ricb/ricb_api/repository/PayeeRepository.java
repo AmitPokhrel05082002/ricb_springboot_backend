@@ -11,12 +11,4 @@ import java.util.Optional;
 @Repository
 public interface PayeeRepository extends JpaRepository<PayeeEntity, Integer> {
     Optional<PayeeEntity> findByCid(String cid);
-    // Native query to get bank_id using bank_name
-    @Query(value = "SELECT id FROM banks WHERE name = :bankName", nativeQuery = true)
-    Integer getBankIdByName(String bankName);
-
-    @Query(value = "SELECT name FROM banks WHERE id = :id", nativeQuery = true)
-    String getBankNameById(@Param("id") Integer id);
-
-
 }

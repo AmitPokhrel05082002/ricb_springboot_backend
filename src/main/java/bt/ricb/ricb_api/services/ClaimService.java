@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -21,7 +20,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class ClaimService {
-    RestTemplate restTemplate;
 
     @Autowired
     private ClaimantRepository claimantRepo;
@@ -55,11 +53,16 @@ public class ClaimService {
 
     @Autowired
     private ApiService apiService;
-    @Autowired private DzongkhagRepository dzongkhagRepo;
-    @Autowired private GewogRepository gewogRepo;
-    @Autowired private VillageRepository villageRepo;
-    @Autowired private BankRepository bankRepo;
-    @Autowired private BranchRepository branchRepo;
+    @Autowired
+    private DzongkhagRepository dzongkhagRepo;
+    @Autowired
+    private GewogRepository gewogRepo;
+    @Autowired
+    private VillageRepository villageRepo;
+    @Autowired
+    private BankRepository bankRepo;
+    @Autowired
+    private BranchRepository branchRepo;
 
 
     // ================= Claim Status Counts =================
@@ -290,7 +293,8 @@ public class ClaimService {
                 "cin", claim.getCin(),
                 "mobileNumber", claimant.getMobileNumber(),
                 "email", claimant.getEmailAddress()
-        );    }
+        );
+    }
 
     // ================= Claim Summary =================
     public List<ClaimSummaryDTO> getAllClaimSummaries() {
@@ -596,6 +600,7 @@ public class ClaimService {
                 })
                 .collect(Collectors.toList());
     }
+
     /**
      * Download claim ZIP file by CIN
      */
@@ -611,7 +616,7 @@ public class ClaimService {
 
         // Extract S3 key
         String key = doc.getZipFilePath();
-        if(key.startsWith("https://")) {
+        if (key.startsWith("https://")) {
             key = key.substring(key.indexOf("claims/"));
         }
 
@@ -639,31 +644,75 @@ public class ClaimService {
     // ================= Update Claim Document =================
     public void updateClaimDocumentByCin(String cin, MultipartFile file) throws Exception {
 
-        // 1️⃣ Find claim by CIN
+        // 1️⃣ Validate file
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("File is required");
+        }
+
+        String originalFileName = file.getOriginalFilename();
+        if (originalFileName == null || !originalFileName.toLowerCase().endsWith(".zip")) {
+            throw new RuntimeException("Only ZIP files are allowed");
+        }
+
+        long maxSize = 50L * 1024 * 1024;
+        if (file.getSize() > maxSize) {
+            throw new RuntimeException("File size must be less than 50MB");
+        }
+
+        // 2️⃣ Get claim
         ClaimEntity claim = claimRepo.findByCin(cin)
                 .orElseThrow(() -> new RuntimeException("Claim with CIN " + cin + " not found"));
 
-        // 2️⃣ Find existing document
+        String oldStatus = claim.getStatus();
+
+        // 3️⃣ Get existing document (if any)
         ClaimDocumentsEntity doc = claimDocumentsRepo.findByClaimId(claim.getId())
-                .orElseThrow(() -> new RuntimeException("No existing document found for CIN " + cin));
+                .orElse(null);
 
-        // 3️⃣ Extract folder path from existing file
-        // Example: https://ricb-my-data.s3.amazonaws.com/claims/c91c96c6-a473-4216-8386-a1d036609da7_claims/CIN-20260008_RICB.zip
-        String oldPath = doc.getZipFilePath();
-        String folderPath = oldPath.substring(0, oldPath.lastIndexOf("/")); // up to "..._claims"
-
-        // 4️⃣ Create new file key in the same folder
-        String newFileName = cin + "_RICB.zip";
+        // 4️⃣ Prepare new file name
+        String cleanFileName = originalFileName.replaceAll("\\s+", "_");
+        String newFileName = cin + "_" + cleanFileName;
+        String folderPath = "claims"; // You can customize the folder path in S3
         String newS3Key = folderPath + "/" + newFileName;
 
-        // 5️⃣ Upload new file (overwrite old file)
-        s3Service.uploadFileWithCustomName(newS3Key, file.getInputStream(), file.getSize());
+        // 5️⃣ Delete old file from S3 if exists
+        if (doc != null && doc.getZipFilePath() != null) {
+            try {
+                s3Service.deleteFile(doc.getZipFilePath()); // ⚠ Make sure your S3Service has this method
+            } catch (Exception e) {
+                // Log but don't block upload
+                System.err.println("Failed to delete old file from S3: " + e.getMessage());
+            }
+        } else {
+            doc = new ClaimDocumentsEntity();
+            doc.setClaimId(claim.getId());
+        }
 
-        // 6️⃣ Update document info
-        doc.setZipFilePath(newS3Key); // path remains same format
+        // 6️⃣ Upload new file to S3
+        s3Service.uploadFileWithCustomName(
+                newS3Key,
+                file.getInputStream(),
+                file.getSize()
+        );
+
+        // 7️⃣ Update document entity
+        doc.setZipFilePath(newS3Key);
         doc.setFileSizeKb((int) (file.getSize() / 1024));
         doc.setUploadedAt(LocalDateTime.now());
-
         claimDocumentsRepo.save(doc);
+
+        // 8️⃣ Update claim status
+        claim.setStatus("Pending");
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        // 9️⃣ Single audit entry
+        logAudit(
+                claim,
+                oldStatus,
+                "Pending",
+                "Document updated for CIN: " + cin,
+                0 // replace with actual logged-in user ID if available
+        );
     }
 }
