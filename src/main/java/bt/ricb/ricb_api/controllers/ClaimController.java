@@ -18,6 +18,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
 import java.sql.*;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -213,15 +214,23 @@ public class ClaimController {
     }
 
     @PostMapping("/getPolicyDetails")
-    public ResponseEntity<?> getPolicyDetails(@RequestParam("cid") String cid) {
+    public ResponseEntity<?> getPolicyDetails(@RequestParam("cid") String cid,
+                                              @RequestParam("dob") String dob) {
         Connection conn = null;
-        PreparedStatement pst = null;
-        ResultSet rs = null;
+        PreparedStatement dobPst = null;
+        PreparedStatement policyPst = null;
+        ResultSet dobRs = null;
+        ResultSet policyRs = null;
 
         try {
             if (cid == null || cid.trim().isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Collections.singletonMap("error", "cid parameter is required"));
+            }
+
+            if (dob == null || dob.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Collections.singletonMap("error", "dob parameter is required"));
             }
 
             conn = ConnectionManager.getOracleConnection();
@@ -230,15 +239,46 @@ public class ClaimController {
                         .body(Collections.singletonMap("error", "Database connection failed"));
             }
 
-            String query =
-                    "SELECT * FROM V_CLAIMS_LI_POLICIES WHERE cid=?";
+            String dobQuery = "SELECT a.DATE_OF_BIRTH " +
+                    "FROM RICB_COM.TL_IN_MAS_CUSTOMER a " +
+                    "WHERE a.CITIZEN_ID = ?";
 
-            pst = conn.prepareStatement(query);
-            pst.setString(1, cid);
+            dobPst = conn.prepareStatement(dobQuery);
+            dobPst.setString(1, cid.trim());
+            dobRs = dobPst.executeQuery();
 
-            rs = pst.executeQuery();
+            if (!dobRs.next()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message", "Citizen not found"));
+            }
 
-            JSONArray jsonArray = convertResultSetToJson(rs);
+            java.sql.Date dbDob = dobRs.getDate("DATE_OF_BIRTH");
+            if (dbDob == null) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Collections.singletonMap("message", "DOB not available for this citizen"));
+            }
+
+            SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+            sdf.setLenient(false);
+
+            String formattedDbDob = sdf.format(dbDob);
+            String inputDob = dob.trim();
+
+            System.out.println("DB DOB: " + formattedDbDob);
+            System.out.println("Input DOB: " + inputDob);
+
+            if (!formattedDbDob.equals(inputDob)) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Collections.singletonMap("message", "DOB does not match"));
+            }
+
+            String policyQuery = "SELECT * FROM V_CLAIMS_LI_POLICIES WHERE cid = ?";
+
+            policyPst = conn.prepareStatement(policyQuery);
+            policyPst.setString(1, cid.trim());
+            policyRs = policyPst.executeQuery();
+
+            JSONArray jsonArray = convertResultSetToJson(policyRs);
 
             if (jsonArray.length() == 0) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -258,8 +298,10 @@ public class ClaimController {
                     .body(Collections.singletonMap("error", "Server error occurred"));
         } finally {
             try {
-                if (rs != null) rs.close();
-                if (pst != null) pst.close();
+                if (policyRs != null) policyRs.close();
+                if (dobRs != null) dobRs.close();
+                if (policyPst != null) policyPst.close();
+                if (dobPst != null) dobPst.close();
                 if (conn != null) conn.close();
             } catch (SQLException e) {
                 e.printStackTrace();
