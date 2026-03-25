@@ -94,7 +94,7 @@ public class CustomerController {
     
     @PostMapping("/customer/bg-status")
     public ResponseEntity<?> validateBGStatus(@RequestBody Map<String, String> payload) {
-
+System.out.println("hiiiii");
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
