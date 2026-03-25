@@ -27,7 +27,7 @@ import java.util.Random;
 
 @SuppressWarnings("deprecation")
 @RestController
-@RequestMapping({ "ricb-business" })
+@RequestMapping({ "ricb" })
 @CrossOrigin({ "*" })
 public class business {
 

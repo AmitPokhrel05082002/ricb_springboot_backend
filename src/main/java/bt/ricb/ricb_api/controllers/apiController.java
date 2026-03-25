@@ -1206,6 +1206,149 @@ public class apiController {
             }
         }
     }
+
+    @GetMapping("/life-annuity")
+    public ResponseEntity<?> getLifeAnnuity(@RequestParam("cid") String cid) {
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+
+        try {
+            if (cid == null || cid.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Collections.singletonMap("error", "cid parameter is required"));
+            }
+
+            conn = ConnectionManager.getOracleConnection();
+            if (conn == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Collections.singletonMap("error", "Database connection failed"));
+            }
+
+            String query =
+                    "SELECT B.Custname, " +
+                            "       b.cityzenshipid, " +
+                            "       amountmask(b.SUMASSURED) SUMASSURED, " +
+                            "       b.policyno ploicy_no, " +
+                            "       b.planname, " +
+                            "       b.annuitytype, " +
+                            "       amountmask(b.Effectivepremiumamount) PREMIUMAMOUNT, " +
+                            "       B.premiumtype, " +
+                            "       B.Agent, " +
+                            "       to_char(b.POLICYDATE,'dd/mm/rrrr') ploicy_date, " +
+                            "       to_char(a.lastpremiumdate,'dd/mm/rrrr') close_date, " +
+                            "       to_char( " +
+                            "           case  " +
+                            "               when to_char(A.lastpremiumdate,'DD') = to_char(b.policydate,'DD') and A.lastpremiumdate is not null " +
+                            "                   then add_months(A.lastpremiumdate, 1)  " +
+                            "               when to_char(A.lastpremiumdate,'DD') <> to_char(b.policydate,'DD') " +
+                            "                    and ((to_char(add_months(A.lastpremiumdate, 1),'MON') <> 'FEB') " +
+                            "                    or (to_char(add_months(A.lastpremiumdate, 1),'MON') = 'FEB' and to_char(b.policydate,'DD') <= '28')) " +
+                            "                    and A.lastpremiumdate is not null " +
+                            "                   then to_date(to_char(b.policydate,'DD') || '-' || " +
+                            "                                to_char(add_months(A.lastpremiumdate, 1),'MON') || '-' || " +
+                            "                                to_char(add_months(A.lastpremiumdate, 1),'YYYY'), 'dd-mon-yyyy') " +
+                            "               when to_char(A.lastpremiumdate,'DD') <> to_char(b.policydate,'DD') " +
+                            "                    and to_char(add_months(A.lastpremiumdate, 1),'MON') = 'FEB' " +
+                            "                    and to_char(b.policydate,'DD') > '28' " +
+                            "                    and A.lastpremiumdate is not null " +
+                            "                   then to_date('28' || '-' || " +
+                            "                                to_char(add_months(A.lastpremiumdate, 1),'MON') || '-' || " +
+                            "                                to_char(add_months(A.lastpremiumdate, 1),'YYYY'), 'dd-mon-yyyy') " +
+                            "               when A.lastpremiumdate is null then b.policydate " +
+                            "           end, 'dd/mm/yyyy') next_due_months, " +
+                            "       trunc(months_between(sysdate, add_months(A.lastpremiumdate, B.noofmonths)), 0) + 1 deu_months, " +
+                            "       b.effectivepremiumamount, " +
+                            "       (trunc(months_between(sysdate, add_months(A.lastpremiumdate, B.noofmonths)), 0) + 1) * b.effectivepremiumamount as total_payable " +
+                            "FROM ( " +
+                            "       select distinct pm.memberid, " +
+                            "              (lmmst.Title || ' ' || lmmst.name) CUSTNAME, " +
+                            "              lmmst.currentaddress CURRADDRESS, " +
+                            "              lmmst.cityzenshipid, " +
+                            "              lmmst.customerno, " +
+                            "              pm.sumassured, " +
+                            "              pm.policyno, " +
+                            "              pm.policydate, " +
+                            "              plm.planname, " +
+                            "              am.annuitytype, " +
+                            "              nvl(prmst.noofmonths,0) noofmonths, " +
+                            "              prmst.premiumtype, " +
+                            "              nvl(prmst.penaltydays,0) penaltydays, " +
+                            "              va.vestingage, " +
+                            "              nvl(l_md.organizationcode,'Direct') Agent, " +
+                            "              (pm.premiumamount + pm.insuraranceamount) ANNUITYAMOUNT, " +
+                            "              pm.effectivepremiumamount " +
+                            "       from lifeannuity_planformember pm " +
+                            "       inner join lifeannuity_membermaster lmmst on pm.memberid = lmmst.id " +
+                            "       inner join lifeannuity_planmaster plm on pm.memberplanid = plm.id " +
+                            "       inner join lifeannuity_annuitytypemaster am on pm.memberannuitytypeid = am.id " +
+                            "       left outer join lifeannuity_vestingage va on pm.membervestingageid = va.id " +
+                            "       left outer join lifeannuity_premiumtypemaster prmst on pm.memberpremiumtypeid = prmst.id " +
+                            "       left outer join lifeannuity_memberdetails l_md on pm.id = l_md.policyid " +
+                            "       where pm.isactive = 1 " +
+                            "         and pm.policydate <= sysdate " +
+                            "         and pm.status = 'Active' " +
+                            "         and pm.memberannuitytypeid = 2 " +
+                            "     ) B " +
+                            "left outer join ( " +
+                            "       select MAX(PremiumDate) lastpremiumdate, policyno " +
+                            "       from la_annuitypremium " +
+                            "       group by policyno " +
+                            "     ) A on B.policyno = A.policyno " +
+                            "where B.penaltydays <> 0 " +
+                            "  and B.cityzenshipid = ? " +
+                            "order by B.memberid";
+
+            pst = conn.prepareStatement(query);
+            pst.setString(1, cid);
+
+            rs = pst.executeQuery();
+
+            JSONArray jsonArray = convertResultSetToJson(rs);
+
+            if (jsonArray.length() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message",
+                                "No Life Annuity Business found for the given citizenship ID"));
+            }
+
+            return ResponseEntity.ok(jsonArray.toString());
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Database error occurred"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Server error occurred"));
+        } finally {
+            try {
+                if (rs != null) rs.close();
+                if (pst != null) pst.close();
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private JSONArray convertResultSetToJson(ResultSet rs) throws SQLException {
+        JSONArray jsonArray = new JSONArray();
+        ResultSetMetaData metaData = rs.getMetaData();
+        int columnCount = metaData.getColumnCount();
+
+        while (rs.next()) {
+            JSONObject obj = new JSONObject();
+            for (int i = 1; i <= columnCount; i++) {
+                String columnName = metaData.getColumnLabel(i);
+                Object value = rs.getObject(i);
+                obj.put(columnName, value != null ? value : JSONObject.NULL);
+            }
+            jsonArray.put(obj);
+        }
+        return jsonArray;
+    }
 }
 
 // Utility class for JSON conversion (if not already exists)
