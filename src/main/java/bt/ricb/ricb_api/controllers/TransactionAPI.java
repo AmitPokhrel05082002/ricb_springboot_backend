@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @CrossOrigin({ "*" })
 @RestController
-@RequestMapping({ "ricb-transaction" })
+@RequestMapping({ "ricb" })
 public class TransactionAPI {
 	@Autowired
 	private TransactionDao transDao;
