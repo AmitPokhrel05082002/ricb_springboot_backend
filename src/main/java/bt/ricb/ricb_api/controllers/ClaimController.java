@@ -1,9 +1,12 @@
 package bt.ricb.ricb_api.controllers;
 
+import bt.ricb.ricb_api.config.ConnectionManager;
 import bt.ricb.ricb_api.models.ClaimEntity;
 import bt.ricb.ricb_api.models.DTOs.*;
 import bt.ricb.ricb_api.services.ClaimService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
@@ -14,7 +17,9 @@ import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import java.sql.*;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -205,5 +210,77 @@ public class ClaimController {
         claimService.updateClaimDocumentByCin(cin, file);
 
         return ResponseEntity.ok("Document updated successfully!");
+    }
+
+    @PostMapping("/getPolicyDetails")
+    public ResponseEntity<?> getPolicyDetails(@RequestParam("cid") String cid) {
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+
+        try {
+            if (cid == null || cid.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Collections.singletonMap("error", "cid parameter is required"));
+            }
+
+            conn = ConnectionManager.getOracleConnection();
+            if (conn == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Collections.singletonMap("error", "Database connection failed"));
+            }
+
+            String query =
+                    "SELECT * FROM V_CLAIMS_LI_POLICIES WHERE cid=?";
+
+            pst = conn.prepareStatement(query);
+            pst.setString(1, cid);
+
+            rs = pst.executeQuery();
+
+            JSONArray jsonArray = convertResultSetToJson(rs);
+
+            if (jsonArray.length() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message",
+                                "No Policies found for the given citizenship ID"));
+            }
+
+            return ResponseEntity.ok(jsonArray.toString());
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Database error occurred"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Server error occurred"));
+        } finally {
+            try {
+                if (rs != null) rs.close();
+                if (pst != null) pst.close();
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private JSONArray convertResultSetToJson(ResultSet rs) throws SQLException {
+        JSONArray jsonArray = new JSONArray();
+        ResultSetMetaData metaData = rs.getMetaData();
+        int columnCount = metaData.getColumnCount();
+
+        while (rs.next()) {
+            JSONObject obj = new JSONObject();
+            for (int i = 1; i <= columnCount; i++) {
+                String columnName = metaData.getColumnLabel(i);
+                Object value = rs.getObject(i);
+                obj.put(columnName, value != null ? value : JSONObject.NULL);
+            }
+            jsonArray.put(obj);
+        }
+        return jsonArray;
     }
 }

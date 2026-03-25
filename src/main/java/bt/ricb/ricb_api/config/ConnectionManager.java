@@ -13,8 +13,8 @@ public class ConnectionManager {
 			Class.forName("oracle.jdbc.driver.OracleDriver");
 
 			connection = DriverManager.getConnection(
-					"jdbc:oracle:thin:@192.168.0.101:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "ricb");
-//			        "jdbc:oracle:thin:@192.168.0.119:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "RICB");
+//					"jdbc:oracle:thin:@192.168.0.101:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "ricb");
+			        "jdbc:oracle:thin:@192.168.0.133:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_LI", "R1CB");
 
 			System.out.println("connection established");
 		} catch (ClassNotFoundException e) {
