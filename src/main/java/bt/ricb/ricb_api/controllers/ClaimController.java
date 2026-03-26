@@ -325,4 +325,219 @@ public class ClaimController {
         }
         return jsonArray;
     }
+
+    @PostMapping("/getGroupPolicyDetails")
+    public ResponseEntity<?> getGroupPolicyDetails(@RequestParam("cid") String cid,
+                                                   @RequestParam("orgCode") String orgCode,
+                                                   @RequestParam("dob") String dob) {
+
+        Connection conn = null;
+        PreparedStatement dobPst = null;
+        PreparedStatement policyPst = null;
+        ResultSet dobRs = null;
+        ResultSet policyRs = null;
+
+        try {
+            if (cid == null || cid.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Collections.singletonMap("error", "cid parameter is required"));
+            }
+
+            if (orgCode == null || orgCode.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Collections.singletonMap("error", "orgCode parameter is required"));
+            }
+
+            if (dob == null || dob.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Collections.singletonMap("error", "dob parameter is required"));
+            }
+
+            conn = ConnectionManager.getOracleConnection();
+            if (conn == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Collections.singletonMap("error", "Database connection failed"));
+            }
+
+            // ✅ DOB validation (same as first API)
+            String dobQuery = "SELECT a.DATE_OF_BIRTH " +
+                    "FROM RICB_COM.TL_IN_MAS_CUSTOMER a " +
+                    "WHERE a.CITIZEN_ID = ?";
+
+            dobPst = conn.prepareStatement(dobQuery);
+            dobPst.setString(1, cid.trim());
+            dobRs = dobPst.executeQuery();
+
+            if (!dobRs.next()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message", "Citizen not found"));
+            }
+
+            java.sql.Date dbDob = dobRs.getDate("DATE_OF_BIRTH");
+            if (dbDob == null) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Collections.singletonMap("message", "DOB not available for this citizen"));
+            }
+
+            SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+            sdf.setLenient(false);
+
+            String formattedDbDob = sdf.format(dbDob);
+            String inputDob = dob.trim();
+
+            System.out.println("DB DOB: " + formattedDbDob);
+            System.out.println("Input DOB: " + inputDob);
+
+            if (!formattedDbDob.equals(inputDob)) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Collections.singletonMap("message", "DOB does not match"));
+            }
+
+            // ✅ Group Policy Query
+            String policyQuery = "SELECT * FROM V_CLAIMS_GROUP_LI_POLICIES WHERE CID = ? AND ORG_CODE = ?";
+
+            policyPst = conn.prepareStatement(policyQuery);
+            policyPst.setString(1, cid.trim());
+            policyPst.setString(2, orgCode.trim());
+            policyRs = policyPst.executeQuery();
+
+            JSONArray jsonArray = convertResultSetToJson(policyRs);
+
+            if (jsonArray.length() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message",
+                                "No Group Policies found for the given CID and ORG_CODE"));
+            }
+
+            return ResponseEntity.ok(jsonArray.toString());
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Database error occurred"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Server error occurred"));
+        } finally {
+            try {
+                if (policyRs != null) policyRs.close();
+                if (dobRs != null) dobRs.close();
+                if (policyPst != null) policyPst.close();
+                if (dobPst != null) dobPst.close();
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    @PostMapping("/insert-claim-header")
+    public ResponseEntity<?> insertClaimHeader(
+            @RequestParam String claimType,
+            @RequestParam String policyNo,
+            @RequestParam String policySerialNo,
+            @RequestParam String claimIntimationDate,
+            @RequestParam String claimIntimationBy,
+            @RequestParam String claimIntimationRelation,
+            @RequestParam String dateOfDeath,
+            @RequestParam String placeOfDeath,
+            @RequestParam String typeOfDeath,
+            @RequestParam String modeOfIntimation,
+            @RequestParam String branchCode,
+            @RequestParam String causeOfDeath,
+            @RequestParam String deceasedName
+    ) {
+
+        Connection conn = null;
+        PreparedStatement seqStmt = null;
+        PreparedStatement insertStmt = null;
+        ResultSet rs = null;
+
+        try {
+            // ✅ FIXED HERE
+            conn = ConnectionManager.getOracleConnection();
+
+            if (conn == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body("Oracle DB connection failed");
+            }
+
+            // ================= 1. Get Serial No =================
+            String seqQuery = "SELECT ricb_li.sq_li_tr_claims_header.nextval FROM dual";
+            seqStmt = conn.prepareStatement(seqQuery);
+            rs = seqStmt.executeQuery();
+
+            long serialNo = 0;
+            if (rs.next()) {
+                serialNo = rs.getLong(1);
+            }
+
+            // ================= 2. Insert =================
+            String insertQuery = """
+        INSERT INTO ricb_li.tl_li_tr_claims_header
+        ( serial_no, claim_type, policy_no, policy_serial_no,
+          claim_intm_date, claim_intm_by, claim_intm_relation,
+          date_of_death, place_of_death, who_was_died,
+          type_of_death, mode_of_intimation,
+          claim_regn_no, claim_regn_date, status_code,
+          prepared_by, prepared_on, prepared_time,
+          branch_code, risk_commencement,
+          cause_of_death, deceased_name )
+        VALUES
+        ( ?, ?, ?, ?,
+          TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
+          TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
+          ?, ?, '',
+          TO_DATE(?, 'dd-mm-yyyy'), 'A',
+          'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
+          ?, '',
+          ?, ? )
+        """;
+
+            insertStmt = conn.prepareStatement(insertQuery);
+
+            String today = java.time.LocalDate.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+
+            String time = java.time.LocalTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+
+            insertStmt.setLong(1, serialNo);
+            insertStmt.setString(2, claimType);
+            insertStmt.setString(3, policyNo);
+            insertStmt.setString(4, policySerialNo);
+            insertStmt.setString(5, claimIntimationDate);
+            insertStmt.setString(6, claimIntimationBy);
+            insertStmt.setString(7, claimIntimationRelation);
+            insertStmt.setString(8, dateOfDeath);
+            insertStmt.setString(9, placeOfDeath);
+            insertStmt.setString(10, typeOfDeath);
+            insertStmt.setString(11, modeOfIntimation);
+            insertStmt.setString(12, today);
+            insertStmt.setString(13, today);
+            insertStmt.setString(14, time);
+            insertStmt.setString(15, branchCode);
+            insertStmt.setString(16, causeOfDeath);
+            insertStmt.setString(17, deceasedName);
+
+            insertStmt.executeUpdate();
+
+            return ResponseEntity.ok(Map.of(
+                    "serialNo", serialNo,
+                    "message", "Inserted successfully"
+            ));
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError()
+                    .body("Error: " + e.getMessage());
+
+        } finally {
+            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
+            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
+            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
+        }
+    }
 }

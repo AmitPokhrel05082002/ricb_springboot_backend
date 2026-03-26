@@ -143,6 +143,39 @@ public class ClaimService {
 
         policyHolderRepo.save(policyHolder);
 
+
+        // ================= Policies =================
+        List<PolicyDTO> policyDTOList = dto.getPolicies();
+
+        if (policyDTOList != null && !policyDTOList.isEmpty()) {
+
+            List<PolicyEntity> policies = new ArrayList<>();
+
+            for (PolicyDTO policyDTO : policyDTOList) {
+
+                PolicyEntity policy = new PolicyEntity();
+
+                policy.setPolicyHolderId(policyHolder.getId());
+                policy.setPolicyName(policyDTO.getPolicyName());
+                policy.setPolicyNumber(policyDTO.getPolicyNumber());
+                policy.setIntimationDate(policyDTO.getIntimationDate());
+                policy.setNomineeName(policyDTO.getNomineeName());
+                policy.setRelation(policyDTO.getRelation());
+                policy.setSumAssured(policyDTO.getSumAssured());
+
+                // Default status if null
+                policy.setStatus(
+                        policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active"
+                );
+
+                policy.setCreatedAt(LocalDateTime.now());
+
+                policies.add(policy);
+            }
+
+            policyRepo.saveAll(policies);
+        }
+
         // ================= Payee =================
         PayeeDTO payeeDTO = dto.getPayee();
 
