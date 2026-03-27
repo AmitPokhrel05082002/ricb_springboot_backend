@@ -1,11 +1,12 @@
 package bt.ricb.ricb_api.models.DTOs;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class FullClaimDTO {
     private ClaimantDTO claimant;
     private PolicyHolderDTO policyHolder;
-//    private PolicyDTO policy;
+    private List<PolicyDTO> policies;
     private ClaimDTO claim;
     private PayeeDTO payee;
 
@@ -24,7 +25,7 @@ public class FullClaimDTO {
     public ClaimDTO getClaim() { return claim; }
     public void setClaim(ClaimDTO claim) { this.claim = claim; }
 
+    public List<PolicyDTO> getPolicies() { return policies; }
 
-//    public PolicyDTO getPolicy() { return policy; }
-//    public void setPolicy(PolicyDTO policy) { this.policy = policy; }
+    public void setPolicies(List<PolicyDTO> policies) { this.policies = policies; }
 }
