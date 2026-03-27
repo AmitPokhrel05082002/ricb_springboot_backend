@@ -63,11 +63,11 @@ public class ClaimController {
                 ));
             }
 
-            long maxSizeBytes = 50L * 1024 * 1024;
+            long maxSizeBytes = 20L * 1024 * 1024;
             if (file.getSize() > maxSizeBytes) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "status", "FAILED",
-                        "message", "File size exceeds 50 MB.",
+                        "message", "File size exceeds 20 MB.",
                         "timestamp", LocalDateTime.now()
                 ));
             }
@@ -196,21 +196,32 @@ public class ClaimController {
     @PostMapping(value = "/update-document/{cin}", consumes = "multipart/form-data")
     public ResponseEntity<String> updateClaimDocument(
             @PathVariable String cin,
-            @RequestPart("file") MultipartFile file) throws Exception {
+            @RequestPart("file") MultipartFile file) {
 
-        // Only accept ZIP files
-        if (!file.getOriginalFilename().endsWith(".zip")) {
-            return ResponseEntity.badRequest().body("Only ZIP files are allowed");
+        try {
+
+            // Validate file
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().body("File is required");
+            }
+
+            String originalFileName = file.getOriginalFilename();
+
+            if (originalFileName == null || !originalFileName.toLowerCase().endsWith(".zip")) {
+                return ResponseEntity.badRequest().body("Only ZIP files are allowed");
+            }
+
+            if (file.getSize() > 20 * 1024 * 1024) {
+                return ResponseEntity.badRequest().body("File size must be less than 20MB");
+            }
+
+            claimService.updateClaimDocumentByCin(cin, file);
+
+            return ResponseEntity.ok("Document updated successfully!");
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
         }
-
-        // Max 50MB
-        if (file.getSize() > 50 * 1024 * 1024) {
-            return ResponseEntity.badRequest().body("File size must be less than 50MB");
-        }
-
-        claimService.updateClaimDocumentByCin(cin, file);
-
-        return ResponseEntity.ok("Document updated successfully!");
     }
 
     @PostMapping("/getPolicyDetails")

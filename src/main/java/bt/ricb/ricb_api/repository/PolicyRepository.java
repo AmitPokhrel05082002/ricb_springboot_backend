@@ -9,4 +9,6 @@ import java.util.List;
 @Repository
 public interface PolicyRepository extends JpaRepository<PolicyEntity, Integer> {
     List<PolicyEntity> findByPolicyHolderId(Integer policyHolderId);
+    // Check if policy number already exists
+    boolean existsByPolicyNumber(String policyNumber);
 }
