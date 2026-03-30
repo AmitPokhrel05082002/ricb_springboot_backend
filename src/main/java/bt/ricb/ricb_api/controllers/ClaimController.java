@@ -19,7 +19,11 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 
 import java.sql.*;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -31,12 +35,64 @@ public class ClaimController {
     @Autowired
     private ClaimService claimService;
 
-    // ================= Submit a new claim =================
-
-//    @PostMapping("/submitdep")
-//    public String submitClaim(@RequestBody FullClaimDTO dto) {
-//        claimService.submitClaimDep(dto);
-//        return "Claim submitted successfully!";
+//    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+//    public ResponseEntity<?> submitClaim(
+//            @RequestPart("data") String data,
+//            @RequestPart("file") MultipartFile file
+//    ) {
+//        try {
+//            // ================= Validate File =================
+//            if (file == null || file.isEmpty()) {
+//                return ResponseEntity.badRequest().body(Map.of(
+//                        "status", "FAILED",
+//                        "message", "No file uploaded. A ZIP file is required.",
+//                        "timestamp", LocalDateTime.now()
+//                ));
+//            }
+//
+//            String fileName = file.getOriginalFilename();
+//            if (fileName == null || !fileName.toLowerCase().endsWith(".zip")) {
+//                return ResponseEntity.badRequest().body(Map.of(
+//                        "status", "FAILED",
+//                        "message", "Invalid file type. Only ZIP files are allowed.",
+//                        "timestamp", LocalDateTime.now()
+//                ));
+//            }
+//
+//            long maxSizeBytes = 20L * 1024 * 1024;
+//            if (file.getSize() > maxSizeBytes) {
+//                return ResponseEntity.badRequest().body(Map.of(
+//                        "status", "FAILED",
+//                        "message", "File size exceeds 20 MB.",
+//                        "timestamp", LocalDateTime.now()
+//                ));
+//            }
+//
+//            // ================= Parse JSON =================
+//            ObjectMapper mapper = new ObjectMapper();
+//            mapper.registerModule(new JavaTimeModule());
+//            mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+//
+//            FullClaimDTO dto = mapper.readValue(data, FullClaimDTO.class);
+//
+//            // ================= Call Service =================
+//            Map<String, Object> result = claimService.submitClaim(dto, file);
+//
+//            return ResponseEntity.ok(Map.of(
+//                    "status", "SUCCESS",
+//                    "message", "Claim submitted successfully",
+//                    "data", result,
+//                    "timestamp", LocalDateTime.now()
+//            ));
+//
+//        } catch (Exception e) {
+//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+//                    "status", "ERROR",
+//                    "message", "Claim submission failed",
+//                    "error", e.getMessage(),
+//                    "timestamp", LocalDateTime.now()
+//            ));
+//        }
 //    }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -44,8 +100,14 @@ public class ClaimController {
             @RequestPart("data") String data,
             @RequestPart("file") MultipartFile file
     ) {
+
+        Connection conn = null;
+        PreparedStatement seqStmt = null;
+        PreparedStatement insertStmt = null;
+        ResultSet rs = null;
+
         try {
-            // ================= Validate File =================
+            // ================= FILE VALIDATION =================
             if (file == null || file.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "status", "FAILED",
@@ -72,33 +134,142 @@ public class ClaimController {
                 ));
             }
 
-            // ================= Parse JSON =================
+            // ================= PARSE JSON =================
             ObjectMapper mapper = new ObjectMapper();
             mapper.registerModule(new JavaTimeModule());
             mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
             FullClaimDTO dto = mapper.readValue(data, FullClaimDTO.class);
 
-            // ================= Call Service =================
+            // ================= POLICY VALIDATION =================
+            if (dto.getPolicies() == null || dto.getPolicies().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "At least one policy is required",
+                        "timestamp", LocalDateTime.now()
+                ));
+            }
+
+            // ================= DB CONNECTION =================
+            conn = ConnectionManager.getOracleConnection();
+            if (conn == null) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("status", "FAILED", "message", "Oracle DB connection failed"));
+            }
+
+            conn.setAutoCommit(false); // start transaction
+
+            // ================= PREPARE VALUES =================
+            String claimType = dto.getClaim().getClaimType();
+            String claimIntimationBy = dto.getClaimant().getFullName();
+            String dateOfDeath = dto.getClaim().getDateOfDeath().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+            String placeOfDeath = dto.getClaim().getPlaceOfDeath();
+            String typeOfDeath = dto.getClaim().getDeathType();
+            String branchCode = String.valueOf(dto.getClaim().getNearestBranchId());
+            String causeOfDeath = dto.getClaim().getCauseOfDeath();
+            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+            String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
+
+            // ================= PREPARE INSERT STATEMENT =================
+            String insertQuery = """
+            INSERT INTO ricb_li.tl_li_tr_claims_header
+            ( serial_no, claim_type, policy_no, policy_serial_no,
+              claim_intm_date, claim_intm_by, claim_intm_relation,
+              date_of_death, place_of_death, who_was_died,
+              type_of_death, mode_of_intimation,
+              claim_regn_no, claim_regn_date, status_code,
+              prepared_by, prepared_on, prepared_time,
+              branch_code, risk_commencement,
+              cause_of_death, deceased_name )
+            VALUES
+            ( ?, ?, ?, ?,
+              TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
+              TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
+              ?, 'W', '',
+              TO_DATE(?, 'dd-mm-yyyy'), 'A',
+              'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
+              ?, '',
+              ?, ? )
+        """;
+            insertStmt = conn.prepareStatement(insertQuery);
+
+            List<Long> serialNumbers = new ArrayList<>();
+
+            // ================= LOOP OVER POLICIES =================
+            for (PolicyDTO policy : dto.getPolicies()) {
+                if (policy.getPolicyNumber() == null || policy.getPolicyNumber().trim().isEmpty()) {
+                    conn.rollback();
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "status", "FAILED",
+                            "message", "policyNumber cannot be null or empty",
+                            "timestamp", LocalDateTime.now()
+                    ));
+                }
+
+                // Get new serial number for each policy
+                seqStmt = conn.prepareStatement("SELECT ricb_li.sq_li_tr_claims_header.nextval FROM dual");
+                rs = seqStmt.executeQuery();
+                long serialNo = 0;
+                if (rs.next()) serialNo = rs.getLong(1);
+                serialNumbers.add(serialNo);
+
+                insertStmt.setLong(1, serialNo);
+                insertStmt.setString(2, claimType);
+                insertStmt.setString(3, policy.getPolicyNumber());
+                insertStmt.setNull(4, java.sql.Types.VARCHAR);
+
+                insertStmt.setString(5, today);
+                insertStmt.setString(6, claimIntimationBy);
+                insertStmt.setNull(7, java.sql.Types.VARCHAR);
+
+                insertStmt.setString(8, dateOfDeath);
+                insertStmt.setString(9, placeOfDeath);
+                insertStmt.setString(10, typeOfDeath);
+
+                insertStmt.setString(11, today);
+                insertStmt.setString(12, today);
+                insertStmt.setString(13, time);
+
+                insertStmt.setString(14, branchCode);
+                insertStmt.setString(15, causeOfDeath);
+
+                insertStmt.setNull(16, java.sql.Types.VARCHAR);
+
+                insertStmt.executeUpdate();
+
+                try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+                try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
+            }
+
+            // ================= CALL SERVICE =================
             Map<String, Object> result = claimService.submitClaim(dto, file);
+
+            conn.commit();
 
             return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
-                    "message", "Claim submitted successfully",
+                    "serialNumbers", serialNumbers,
+                    "message", "Claims successfully recorded in the system",
                     "data", result,
                     "timestamp", LocalDateTime.now()
             ));
 
         } catch (Exception e) {
+            try { if (conn != null) conn.rollback(); } catch (Exception ignored) {}
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "status", "ERROR",
                     "message", "Claim submission failed",
                     "error", e.getMessage(),
                     "timestamp", LocalDateTime.now()
             ));
+        } finally {
+            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
+            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
+            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
         }
     }
-
 
     // Get all Dzongkhags
     @GetMapping("/dzongkhags")
@@ -443,112 +614,110 @@ public class ClaimController {
         }
     }
 
-    @PostMapping("/insert-claim-header")
-    public ResponseEntity<?> insertClaimHeader(
-            @RequestParam String claimType,
-            @RequestParam String policyNo,
-            @RequestParam String policySerialNo,
-            @RequestParam String claimIntimationDate,
-            @RequestParam String claimIntimationBy,
-            @RequestParam String claimIntimationRelation,
-            @RequestParam String dateOfDeath,
-            @RequestParam String placeOfDeath,
-            @RequestParam String typeOfDeath,
-            @RequestParam String modeOfIntimation,
-            @RequestParam String branchCode,
-            @RequestParam String causeOfDeath,
-            @RequestParam String deceasedName
-    ) {
-
-        Connection conn = null;
-        PreparedStatement seqStmt = null;
-        PreparedStatement insertStmt = null;
-        ResultSet rs = null;
-
-        try {
-            // ✅ FIXED HERE
-            conn = ConnectionManager.getOracleConnection();
-
-            if (conn == null) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body("Oracle DB connection failed");
-            }
-
-            // ================= 1. Get Serial No =================
-            String seqQuery = "SELECT ricb_li.sq_li_tr_claims_header.nextval FROM dual";
-            seqStmt = conn.prepareStatement(seqQuery);
-            rs = seqStmt.executeQuery();
-
-            long serialNo = 0;
-            if (rs.next()) {
-                serialNo = rs.getLong(1);
-            }
-
-            // ================= 2. Insert =================
-            String insertQuery = """
-        INSERT INTO ricb_li.tl_li_tr_claims_header
-        ( serial_no, claim_type, policy_no, policy_serial_no,
-          claim_intm_date, claim_intm_by, claim_intm_relation,
-          date_of_death, place_of_death, who_was_died,
-          type_of_death, mode_of_intimation,
-          claim_regn_no, claim_regn_date, status_code,
-          prepared_by, prepared_on, prepared_time,
-          branch_code, risk_commencement,
-          cause_of_death, deceased_name )
-        VALUES
-        ( ?, ?, ?, ?,
-          TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
-          TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
-          ?, ?, '',
-          TO_DATE(?, 'dd-mm-yyyy'), 'A',
-          'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
-          ?, '',
-          ?, ? )
-        """;
-
-            insertStmt = conn.prepareStatement(insertQuery);
-
-            String today = java.time.LocalDate.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy"));
-
-            String time = java.time.LocalTime.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
-
-            insertStmt.setLong(1, serialNo);
-            insertStmt.setString(2, claimType);
-            insertStmt.setString(3, policyNo);
-            insertStmt.setString(4, policySerialNo);
-            insertStmt.setString(5, claimIntimationDate);
-            insertStmt.setString(6, claimIntimationBy);
-            insertStmt.setString(7, claimIntimationRelation);
-            insertStmt.setString(8, dateOfDeath);
-            insertStmt.setString(9, placeOfDeath);
-            insertStmt.setString(10, typeOfDeath);
-            insertStmt.setString(11, modeOfIntimation);
-            insertStmt.setString(12, today);
-            insertStmt.setString(13, today);
-            insertStmt.setString(14, time);
-            insertStmt.setString(15, branchCode);
-            insertStmt.setString(16, causeOfDeath);
-            insertStmt.setString(17, deceasedName);
-
-            insertStmt.executeUpdate();
-
-            return ResponseEntity.ok(Map.of(
-                    "serialNo", serialNo,
-                    "message", "Inserted successfully"
-            ));
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.internalServerError()
-                    .body("Error: " + e.getMessage());
-
-        } finally {
-            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
-            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
-            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
-            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
-        }
-    }
+//    @PostMapping("/insert-claim-header")
+//    public ResponseEntity<?> insertClaimHeader(
+//            @RequestParam String claimType,
+//            @RequestParam String policyNo,
+//            @RequestParam String policySerialNo,
+//            @RequestParam String claimIntimationDate,
+//            @RequestParam String claimIntimationBy,
+//            @RequestParam String claimIntimationRelation,
+//            @RequestParam String dateOfDeath,
+//            @RequestParam String placeOfDeath,
+//            @RequestParam String typeOfDeath,
+//            @RequestParam String branchCode,
+//            @RequestParam String causeOfDeath,
+//            @RequestParam String deceasedName
+//    ) {
+//
+//        Connection conn = null;
+//        PreparedStatement seqStmt = null;
+//        PreparedStatement insertStmt = null;
+//        ResultSet rs = null;
+//
+//        try {
+//            // ✅ FIXED HERE
+//            conn = ConnectionManager.getOracleConnection();
+//
+//            if (conn == null) {
+//                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+//                        .body("Oracle DB connection failed");
+//            }
+//
+//            // ================= 1. Get Serial No =================
+//            String seqQuery = "SELECT ricb_li.sq_li_tr_claims_header.nextval FROM dual";
+//            seqStmt = conn.prepareStatement(seqQuery);
+//            rs = seqStmt.executeQuery();
+//
+//            long serialNo = 0;
+//            if (rs.next()) {
+//                serialNo = rs.getLong(1);
+//            }
+//
+//            // ================= 2. Insert =================
+//            String insertQuery = """
+//        INSERT INTO ricb_li.tl_li_tr_claims_header
+//        ( serial_no, claim_type, policy_no, policy_serial_no,
+//          claim_intm_date, claim_intm_by, claim_intm_relation,
+//          date_of_death, place_of_death, who_was_died,
+//          type_of_death, mode_of_intimation,
+//          claim_regn_no, claim_regn_date, status_code,
+//          prepared_by, prepared_on, prepared_time,
+//          branch_code, risk_commencement,
+//          cause_of_death, deceased_name )
+//        VALUES
+//        ( ?, ?, ?, ?,
+//          TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
+//          TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
+//          ?, 'W', '',
+//          TO_DATE(?, 'dd-mm-yyyy'), 'A',
+//          'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
+//          ?, '',
+//          ?, ? )
+//        """;
+//
+//            insertStmt = conn.prepareStatement(insertQuery);
+//
+//            String today = java.time.LocalDate.now()
+//                    .format(java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+//
+//            String time = java.time.LocalTime.now()
+//                    .format(java.time.format.DateTimeFormatter.ofPattern("HHmmss"));
+//
+//            insertStmt.setLong(1, serialNo);
+//            insertStmt.setString(2, claimType);
+//            insertStmt.setString(3, policyNo);
+//            insertStmt.setString(4, policySerialNo);
+//            insertStmt.setString(5, claimIntimationDate);
+//            insertStmt.setString(6, claimIntimationBy);
+//            insertStmt.setString(7, claimIntimationRelation);
+//            insertStmt.setString(8, dateOfDeath);
+//            insertStmt.setString(9, placeOfDeath);
+//            insertStmt.setString(10, typeOfDeath);
+//            insertStmt.setString(11, today);
+//            insertStmt.setString(12, today);
+//            insertStmt.setString(13, time);
+//            insertStmt.setString(14, branchCode);
+//            insertStmt.setString(15, causeOfDeath);
+//            insertStmt.setString(16, deceasedName);
+//
+//            insertStmt.executeUpdate();
+//
+//            return ResponseEntity.ok(Map.of(
+//                    "serialNo", serialNo,
+//                    "message", "Inserted successfully"
+//            ));
+//
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ResponseEntity.internalServerError()
+//                    .body("Error: " + e.getMessage());
+//
+//        } finally {
+//            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+//            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
+//            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
+//            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
+//        }
+//    }
 }

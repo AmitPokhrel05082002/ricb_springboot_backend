@@ -17,6 +17,8 @@ public class ConnectionManager {
 			        "jdbc:oracle:thin:@192.168.0.133:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_LI", "R1CB");
 
 			System.out.println("connection established");
+
+
 		} catch (ClassNotFoundException e) {
 
 			System.out.println("Connection Failed. Where is your Oracle JDBC Driver?");
