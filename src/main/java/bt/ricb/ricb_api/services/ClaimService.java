@@ -106,55 +106,48 @@ public class ClaimService {
         // ================= Claimant =================
         ClaimantDTO claimantDTO = dto.getClaimant();
 
-        ClaimantEntity claimant = claimantRepo
-                .findByCid(claimantDTO.getCid())
-                .orElse(new ClaimantEntity());
-
-        claimant.setCid(claimantDTO.getCid());
+        ClaimantEntity claimant = new ClaimantEntity();
+        claimant.setCid(claimantDTO.getCid());  // duplicate allowed
         claimant.setFullName(claimantDTO.getFullName());
         claimant.setMobileNumber(claimantDTO.getMobileNumber());
         claimant.setEmailAddress(claimantDTO.getEmailAddress());
         claimant.setDzongkhagId(claimantDTO.getDzongkhagId());
         claimant.setGewogId(claimantDTO.getGewogId());
         claimant.setVillageId(claimantDTO.getVillageId());
-
+        claimant.setCreatedAt(LocalDateTime.now());
         claimant.setUpdatedAt(LocalDateTime.now());
-        if (claimant.getId() == null) {
-            claimant.setCreatedAt(LocalDateTime.now());
-        }
 
         claimantRepo.save(claimant);
 
         // ================= Policy Holder =================
         PolicyHolderDTO phDTO = dto.getPolicyHolder();
 
-        PolicyHolderEntity policyHolder = policyHolderRepo
-                .findByCid(phDTO.getCid())
-                .orElse(new PolicyHolderEntity());
-
-        policyHolder.setCid(phDTO.getCid());
+        PolicyHolderEntity policyHolder = new PolicyHolderEntity();
+        policyHolder.setCid(phDTO.getCid()); // duplicate allowed
         policyHolder.setDateOfBirth(phDTO.getDateOfBirth());
         policyHolder.setIsValidated(1);
+        policyHolder.setCreatedAt(LocalDateTime.now());
         policyHolder.setUpdatedAt(LocalDateTime.now());
-
-        if (policyHolder.getId() == null) {
-            policyHolder.setCreatedAt(LocalDateTime.now());
-        }
 
         policyHolderRepo.save(policyHolder);
 
-
         // ================= Policies =================
         List<PolicyDTO> policyDTOList = dto.getPolicies();
+        List<String> duplicatePolicies = new ArrayList<>();
 
         if (policyDTOList != null && !policyDTOList.isEmpty()) {
-
-            List<PolicyEntity> policies = new ArrayList<>();
+            List<PolicyEntity> policiesToInsert = new ArrayList<>();
 
             for (PolicyDTO policyDTO : policyDTOList) {
 
-                PolicyEntity policy = new PolicyEntity();
+                // Check if policy number already exists
+                boolean exists = policyRepo.existsByPolicyNumber(policyDTO.getPolicyNumber());
+                if (exists) {
+                    duplicatePolicies.add(policyDTO.getPolicyNumber());
+                    continue; // skip this policy
+                }
 
+                PolicyEntity policy = new PolicyEntity();
                 policy.setPolicyHolderId(policyHolder.getId());
                 policy.setPolicyName(policyDTO.getPolicyName());
                 policy.setPolicyNumber(policyDTO.getPolicyNumber());
@@ -162,59 +155,52 @@ public class ClaimService {
                 policy.setNomineeName(policyDTO.getNomineeName());
                 policy.setRelation(policyDTO.getRelation());
                 policy.setSumAssured(policyDTO.getSumAssured());
-
-                // Default status if null
-                policy.setStatus(
-                        policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active"
-                );
-
+                policy.setStatus(policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active");
                 policy.setCreatedAt(LocalDateTime.now());
 
-                policies.add(policy);
+                policiesToInsert.add(policy);
             }
 
-            policyRepo.saveAll(policies);
+            if (!policiesToInsert.isEmpty()) {
+                policyRepo.saveAll(policiesToInsert);
+            }
         }
+
+// If any duplicates found, throw an exception or return in response
+        if (!duplicatePolicies.isEmpty()) {
+            throw new RuntimeException("Policy already exists: " + String.join(", ", duplicatePolicies));
+        }
+
 
         // ================= Payee =================
         PayeeDTO payeeDTO = dto.getPayee();
-
-        PayeeEntity payee = payeeRepo
-                .findByCid(payeeDTO.getCid())
-                .orElse(new PayeeEntity());
-
+        PayeeEntity payee = new PayeeEntity();
         payee.setClaimantId(claimant.getId());
         payee.setSameAsClaimant("Yes".equalsIgnoreCase(payeeDTO.getSameAsClaimant()) ? 1 : 0);
-        payee.setCid(payeeDTO.getCid());
+        payee.setCid(payeeDTO.getCid()); // duplicate allowed
         payee.setAccountHolderName(payeeDTO.getAccountHolderName());
         payee.setAccountNumber(payeeDTO.getAccountNumber());
         payee.setMobileNumber(payeeDTO.getMobileNumber());
         payee.setBankId(payeeDTO.getBankId());
-
+        payee.setCreatedAt(LocalDateTime.now());
         payee.setUpdatedAt(LocalDateTime.now());
-        if (payee.getId() == null) {
-            payee.setCreatedAt(LocalDateTime.now());
-        }
 
         payeeRepo.save(payee);
 
         // ================= Claim =================
         ClaimDTO claimDTO = dto.getClaim();
         ClaimEntity claim = new ClaimEntity();
-
-        claim.setCin(generateCin());
+        claim.setCin(generateCin()); // unique CIN
         claim.setClaimantId(claimant.getId());
         claim.setPayeeId(payee.getId());
         claim.setPolicyHolderId(policyHolder.getId());
         claim.setNearestBranchId(claimDTO.getNearestBranchId());
-
         claim.setClaimType(claimDTO.getClaimType());
 
-// Conditional nulling based on claim type
+        // Conditional nulling based on claim type
         if ("Death".equalsIgnoreCase(claimDTO.getClaimType())) {
-            // For Death claim, null PTD fields
             claim.setG2cApplicationNumber(null);
-            claim.setDateOfDeath(claimDTO.getDateOfDeath());  // optional if you want to allow death date
+            claim.setDateOfDeath(claimDTO.getDateOfDeath());
             claim.setPlaceOfDeath(claimDTO.getPlaceOfDeath());
             claim.setDeathType(claimDTO.getDeathType());
             claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
@@ -225,19 +211,16 @@ public class ClaimService {
             claim.setCauseOfLoss(null);
 
         } else if ("Permanent Total Disability".equalsIgnoreCase(claimDTO.getClaimType())) {
-            // For PTD, null Death fields
             claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
             claim.setDateOfDeath(null);
             claim.setPlaceOfDeath(null);
             claim.setDeathType(null);
             claim.setCauseOfDeath(null);
 
-            // Loss fields
             claim.setDateOfLoss(claimDTO.getDateOfLoss());
             claim.setPlaceOfLoss(claimDTO.getPlaceOfLoss());
             claim.setCauseOfLoss(claimDTO.getCauseOfLoss());
         } else {
-            // For other claim types, store as provided or handle accordingly
             claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
             claim.setDateOfDeath(claimDTO.getDateOfDeath());
             claim.setPlaceOfDeath(claimDTO.getPlaceOfDeath());
@@ -254,6 +237,7 @@ public class ClaimService {
         claim.setUpdatedAt(LocalDateTime.now());
 
         claimRepo.saveAndFlush(claim);
+
         // ================= Documents =================
         if (file != null && !file.isEmpty()) {
 
@@ -263,9 +247,9 @@ public class ClaimService {
                 throw new RuntimeException("Invalid file type. Only ZIP files are allowed.");
             }
 
-            long maxSizeBytes = 50L * 1024 * 1024;
+            long maxSizeBytes = 20L * 1024 * 1024;
             if (file.getSize() > maxSizeBytes) {
-                throw new RuntimeException("File size exceeds 50 MB.");
+                throw new RuntimeException("File size exceeds 20 MB.");
             }
 
             try {
@@ -392,6 +376,22 @@ public class ClaimService {
         phDTO.setCid(policyHolder.getCid());
         phDTO.setDateOfBirth(policyHolder.getDateOfBirth());
 
+        // ================= PolicyDTO List =================
+        List<PolicyDTO> policyDTOList = new ArrayList<>();
+        List<PolicyEntity> policyEntities = policyRepo.findByPolicyHolderId(policyHolder.getId());
+        for (PolicyEntity policy : policyEntities) {
+            PolicyDTO policyDTO = new PolicyDTO();
+            policyDTO.setPolicyName(policy.getPolicyName());
+            policyDTO.setPolicyNumber(policy.getPolicyNumber());
+            policyDTO.setIntimationDate(policy.getIntimationDate());
+            policyDTO.setNomineeName(policy.getNomineeName());
+            policyDTO.setRelation(policy.getRelation());
+            policyDTO.setSumAssured(policy.getSumAssured());
+            policyDTO.setStatus(policy.getStatus());
+
+            policyDTOList.add(policyDTO);
+        }
+
         // Build ClaimDTO
         ClaimDTO claimDTO = new ClaimDTO();
         claimDTO.setNearestBranchId(claim.getNearestBranchId());
@@ -410,6 +410,7 @@ public class ClaimService {
         response.setClaimant(claimantDTO);
         response.setPayee(payeeDTO);
         response.setPolicyHolder(phDTO);
+        response.setPolicies(policyDTOList);
         response.setClaim(claimDTO);
         response.setCin(claim.getCin());
         response.setCreatedAt(claim.getCreatedAt());
@@ -677,75 +678,84 @@ public class ClaimService {
     // ================= Update Claim Document =================
     public void updateClaimDocumentByCin(String cin, MultipartFile file) throws Exception {
 
-        // 1️⃣ Validate file
+        // ================= 1️⃣ Validate File =================
         if (file == null || file.isEmpty()) {
             throw new RuntimeException("File is required");
         }
 
         String originalFileName = file.getOriginalFilename();
+
         if (originalFileName == null || !originalFileName.toLowerCase().endsWith(".zip")) {
             throw new RuntimeException("Only ZIP files are allowed");
         }
 
-        long maxSize = 50L * 1024 * 1024;
+        long maxSize = 20L * 1024 * 1024;
         if (file.getSize() > maxSize) {
-            throw new RuntimeException("File size must be less than 50MB");
+            throw new RuntimeException("File size must be less than 20MB");
         }
 
-        // 2️⃣ Get claim
+        // ================= 2️⃣ Get Claim =================
         ClaimEntity claim = claimRepo.findByCin(cin)
                 .orElseThrow(() -> new RuntimeException("Claim with CIN " + cin + " not found"));
 
         String oldStatus = claim.getStatus();
 
-        // 3️⃣ Get existing document (if any)
+        // ================= 3️⃣ Get Existing Document =================
         ClaimDocumentsEntity doc = claimDocumentsRepo.findByClaimId(claim.getId())
                 .orElse(null);
 
-        // 4️⃣ Prepare new file name
+        // ================= 4️⃣ Prepare File Name (SAME AS INSERT) =================
         String cleanFileName = originalFileName.replaceAll("\\s+", "_");
-        String newFileName = cin + "_" + cleanFileName;
-        String folderPath = "claims"; // You can customize the folder path in S3
-        String newS3Key = folderPath + "/" + newFileName;
+        String fileName = "claims/" + cin + "_" + cleanFileName;
 
-        // 5️⃣ Delete old file from S3 if exists
+        // ================= 5️⃣ Delete Old File (if exists) =================
         if (doc != null && doc.getZipFilePath() != null) {
+
+            String oldFilePath = doc.getZipFilePath();
+
+            // Convert FULL URL → S3 KEY
+            if (oldFilePath.startsWith("http")) {
+                oldFilePath = oldFilePath.substring(oldFilePath.indexOf(".com/") + 5);
+            }
+
             try {
-                s3Service.deleteFile(doc.getZipFilePath()); // ⚠ Make sure your S3Service has this method
+                s3Service.deleteFile(oldFilePath);
             } catch (Exception e) {
-                // Log but don't block upload
                 System.err.println("Failed to delete old file from S3: " + e.getMessage());
             }
+
         } else {
             doc = new ClaimDocumentsEntity();
             doc.setClaimId(claim.getId());
         }
 
-        // 6️⃣ Upload new file to S3
-        s3Service.uploadFileWithCustomName(
-                newS3Key,
+        // ================= 6️⃣ Upload New File (SAME AS INSERT) =================
+        String fileUrl = s3Service.uploadFile(
+                fileName,
                 file.getInputStream(),
                 file.getSize()
         );
 
-        // 7️⃣ Update document entity
-        doc.setZipFilePath(newS3Key);
+        // ================= 7️⃣ Save Document =================
+        doc.setZipFilePath(fileUrl); // ✅ FULL URL
         doc.setFileSizeKb((int) (file.getSize() / 1024));
         doc.setUploadedAt(LocalDateTime.now());
+
         claimDocumentsRepo.save(doc);
 
-        // 8️⃣ Update claim status
+        // ================= 8️⃣ Update Claim =================
         claim.setStatus("Pending");
         claim.setUpdatedAt(LocalDateTime.now());
+
         claimRepo.save(claim);
 
-        // 9️⃣ Single audit entry
+        // ================= 9️⃣ Audit Log =================
         logAudit(
                 claim,
                 oldStatus,
                 "Pending",
                 "Document updated for CIN: " + cin,
-                0 // replace with actual logged-in user ID if available
+                0 // Replace with logged-in user ID
         );
     }
 }
