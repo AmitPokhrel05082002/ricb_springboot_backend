@@ -9,7 +9,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 @RestController
-@RequestMapping("/claims")
+@CrossOrigin({ "*" })
+@RequestMapping("/li")
 public class PhoMOController {
 
     @Autowired
@@ -18,6 +19,7 @@ public class PhoMOController {
     // ================= calculatePhomoAge =================
     @GetMapping("/phomo-age")
     public Double calculatePhomoAge(@RequestParam int ageDifference) {
+        System.out.println("hiii");
         String sql = "SELECT addition_to_young_age FROM life_insurance_phomo_age_tables WHERE age_difference = ?";
         return jdbcTemplate.queryForObject(sql, new Object[]{ageDifference}, Double.class);
     }

@@ -26,7 +26,7 @@ public class CcdbAPI {
 		return response;
 	}
 
-	@PostMapping({ "createCCDBCustomer" })
+	@PostMapping({ "/createCCDBCustomer" })
 	public ResponseEntity<String> createCustomer(@RequestBody CcdbCustomerDto data) throws Exception {
 		String response = this.apiService.createCustomer(data);
 		return ResponseEntity.ok(response);
