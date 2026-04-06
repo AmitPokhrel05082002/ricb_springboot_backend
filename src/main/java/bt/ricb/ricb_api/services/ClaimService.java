@@ -111,6 +111,7 @@ public class ClaimService {
         claimant.setFullName(claimantDTO.getFullName());
         claimant.setMobileNumber(claimantDTO.getMobileNumber());
         claimant.setEmailAddress(claimantDTO.getEmailAddress());
+        claimant.setRelation(claimantDTO.getRelation());
         claimant.setDzongkhagId(claimantDTO.getDzongkhagId());
         claimant.setGewogId(claimantDTO.getGewogId());
         claimant.setVillageId(claimantDTO.getVillageId());
@@ -149,12 +150,13 @@ public class ClaimService {
 
                 PolicyEntity policy = new PolicyEntity();
                 policy.setPolicyHolderId(policyHolder.getId());
-                policy.setPolicyName(policyDTO.getPolicyName());
+                policy.setPolicyHolderName(policyDTO.getPolicyHolderName());
                 policy.setPolicyNumber(policyDTO.getPolicyNumber());
+                policy.setPolicySerialNumber(policyDTO.getPolicySerialNumber());
                 policy.setIntimationDate(policyDTO.getIntimationDate());
                 policy.setNomineeName(policyDTO.getNomineeName());
-                policy.setRelation(policyDTO.getRelation());
                 policy.setSumAssured(policyDTO.getSumAssured());
+                policy.setBranchCode(policyDTO.getBranchCode());
                 policy.setStatus(policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active");
                 policy.setCreatedAt(LocalDateTime.now());
 
@@ -197,7 +199,7 @@ public class ClaimService {
         claim.setNearestBranchId(claimDTO.getNearestBranchId());
         claim.setClaimType(claimDTO.getClaimType());
 
-        // Conditional nulling based on claim type
+// Conditional nulling based on claim type
         if ("Death".equalsIgnoreCase(claimDTO.getClaimType())) {
             claim.setG2cApplicationNumber(null);
             claim.setDateOfDeath(claimDTO.getDateOfDeath());
@@ -205,39 +207,20 @@ public class ClaimService {
             claim.setDeathType(claimDTO.getDeathType());
             claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
 
-            // PTD fields null
-            claim.setDateOfLoss(null);
-            claim.setPlaceOfLoss(null);
-            claim.setCauseOfLoss(null);
-
-        } else if ("Permanent Total Disability".equalsIgnoreCase(claimDTO.getClaimType())) {
-            claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
-            claim.setDateOfDeath(null);
-            claim.setPlaceOfDeath(null);
-            claim.setDeathType(null);
-            claim.setCauseOfDeath(null);
-
-            claim.setDateOfLoss(claimDTO.getDateOfLoss());
-            claim.setPlaceOfLoss(claimDTO.getPlaceOfLoss());
-            claim.setCauseOfLoss(claimDTO.getCauseOfLoss());
         } else {
+            // For all other claim types
             claim.setG2cApplicationNumber(claimDTO.getG2cApplicationNumber());
             claim.setDateOfDeath(claimDTO.getDateOfDeath());
             claim.setPlaceOfDeath(claimDTO.getPlaceOfDeath());
             claim.setDeathType(claimDTO.getDeathType());
             claim.setCauseOfDeath(claimDTO.getCauseOfDeath());
 
-            claim.setDateOfLoss(claimDTO.getDateOfLoss());
-            claim.setPlaceOfLoss(claimDTO.getPlaceOfLoss());
-            claim.setCauseOfLoss(claimDTO.getCauseOfLoss());
         }
-
         claim.setStatus("Pending");
         claim.setCreatedAt(LocalDateTime.now());
         claim.setUpdatedAt(LocalDateTime.now());
 
         claimRepo.saveAndFlush(claim);
-
         // ================= Documents =================
         if (file != null && !file.isEmpty()) {
 
@@ -279,6 +262,7 @@ public class ClaimService {
 
         // ================= Notification =================
         String cin = claim.getCin();
+        String claimantFullName = claimant.getFullName();
 
         try {
             String mobile = claimant.getMobileNumber();
@@ -286,18 +270,29 @@ public class ClaimService {
             if (mobile != null && !mobile.isBlank()) {
 
                 if (mobile.startsWith("17")) {
-                    apiService.sendSms("Your claim submitted. CIN: " + cin, mobile);
+                    apiService.sendSms("Your life insurance claim is successfully registered. You can track the progress of your claim with [" + cin + "]", mobile);
 
                 } else if (mobile.startsWith("77")) {
-                    apiService.sendSmsTcell("Your claim submitted. CIN: " + cin, mobile);
+                    apiService.sendSmsTcell("Your life insurance claim is successfully registered. You can track the progress of your claim with [" + cin + "]", mobile);
                 }
             }
 
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+
+                String subject = "Claim Registration Successful";
+
+                String body = "Dear " + claimantFullName + ",\n\n"
+                        + "This is to acknowledge on having successfully registered your life insurance claim online. "
+                        + "Our team is currently reviewing the claims and will keep you informed of any updates or if further information is required.\n\n"
+                        + "Use the [" + cin + "] to track its progress online via your “My Business Profile” on the RICB website.\n\n"
+                        + "Should you require any further clarifications, please feel free to contact us at our toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                        + "Best regards,\n"
+                        + "RICB";
+
                 emailService.sendEmail(
                         claimant.getEmailAddress(),
-                        "Insurance Claim Submitted",
-                        "Your claim has been submitted successfully. CIN: " + cin,
+                        subject,
+                        body,
                         null
                 );
             }
@@ -316,24 +311,40 @@ public class ClaimService {
     // ================= Claim Summary =================
     public List<ClaimSummaryDTO> getAllClaimSummaries() {
 
-        List<ClaimEntity> claims = claimRepo.findAll(); // fetch all claims
+        List<ClaimEntity> claims = claimRepo.findAll();
 
         return claims.stream().map(claim -> {
-            ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
-                    .orElseThrow(() -> new RuntimeException("Claimant not found"));
 
+            // ================= Claimant =================
+            ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                    .orElseThrow(() ->
+                            new RuntimeException("Claimant not found for ID: " + claim.getClaimantId())
+                    );
+
+            // ================= Policy =================
+            List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+
+            if (policies.isEmpty()) {
+                throw new RuntimeException("Policy not found for PolicyHolderId: " + claim.getPolicyHolderId());
+            }
+
+            // Since one policy holder can have multiple policies but same name → take first
+            String policyHolderName = policies.get(0).getPolicyHolderName();
+
+            // ================= DTO Mapping =================
             ClaimSummaryDTO summary = new ClaimSummaryDTO();
             summary.setCin(claim.getCin());
             summary.setClaimantName(claimant.getFullName());
+            summary.setPolicyHolderName(policyHolderName); // ✅ added
             summary.setSubmittedDate(claim.getUpdatedAt());
             summary.setStatus(claim.getStatus());
             summary.setRemarks(claim.getRemarks());
             summary.setCreatedAt(claim.getCreatedAt());
 
             return summary;
+
         }).collect(Collectors.toList());
     }
-
 
     // ================= Full Claim Details =================
     public ClaimResponseDRO getFullClaimByCin(String cin) {
@@ -358,6 +369,7 @@ public class ClaimService {
         claimantDTO.setFullName(claimant.getFullName());
         claimantDTO.setMobileNumber(claimant.getMobileNumber());
         claimantDTO.setEmailAddress(claimant.getEmailAddress());
+        claimantDTO.setRelation(claimant.getRelation());
         claimantDTO.setDzongkhagId(claimant.getDzongkhagId());
         claimantDTO.setGewogId(claimant.getGewogId());
         claimantDTO.setVillageId(claimant.getVillageId());
@@ -381,12 +393,13 @@ public class ClaimService {
         List<PolicyEntity> policyEntities = policyRepo.findByPolicyHolderId(policyHolder.getId());
         for (PolicyEntity policy : policyEntities) {
             PolicyDTO policyDTO = new PolicyDTO();
-            policyDTO.setPolicyName(policy.getPolicyName());
             policyDTO.setPolicyNumber(policy.getPolicyNumber());
+            policyDTO.setPolicyHolderName(policy.getPolicyHolderName());
             policyDTO.setIntimationDate(policy.getIntimationDate());
+            policyDTO.setPolicySerialNumber(policy.getPolicySerialNumber());
             policyDTO.setNomineeName(policy.getNomineeName());
-            policyDTO.setRelation(policy.getRelation());
             policyDTO.setSumAssured(policy.getSumAssured());
+            policyDTO.setBranchCode(policy.getBranchCode());
             policyDTO.setStatus(policy.getStatus());
 
             policyDTOList.add(policyDTO);
@@ -401,9 +414,6 @@ public class ClaimService {
         claimDTO.setPlaceOfDeath(claim.getPlaceOfDeath());
         claimDTO.setDeathType(claim.getDeathType());
         claimDTO.setCauseOfDeath(claim.getCauseOfDeath());
-        claimDTO.setDateOfLoss(claim.getDateOfLoss());
-        claimDTO.setPlaceOfLoss(claim.getPlaceOfLoss());
-        claimDTO.setCauseOfLoss(claim.getCauseOfLoss());
 
         // Build Response
         ClaimResponseDRO response = new ClaimResponseDRO();
@@ -431,53 +441,6 @@ public class ClaimService {
         claimAuditRepo.save(audit);
     }
 
-
-    // ================= Resubmit Claim =================
-    @Transactional
-    public ClaimEntity resubmitClaim(ClaimActionDTO dto) {
-        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
-                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
-        String oldStatus = claim.getStatus();
-        claim.setStatus("Resubmission Required");
-        claim.setRemarks(dto.getRemarks());
-        claim.setUpdatedAt(LocalDateTime.now());
-        claimRepo.save(claim);
-
-        ClaimActionEntity action = new ClaimActionEntity();
-        action.setClaimId(claim.getId());
-        action.setActionType(ClaimActionEntity.ActionType.Resubmitted);
-        action.setRemarks(dto.getRemarks());
-        action.setActionedBy(dto.getActionedBy());
-        action.setActionedAt(LocalDateTime.now());
-        claimActionsRepo.save(action);
-
-        logAudit(claim, oldStatus, "Resubmission Required", dto.getRemarks(), dto.getActionedBy());
-        return claim;
-    }
-
-    // ================= Reject Claim =================
-    @Transactional
-    public ClaimEntity rejectClaim(ClaimActionDTO dto) {
-        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
-                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
-        String oldStatus = claim.getStatus();
-        claim.setStatus("Rejected");
-        claim.setRemarks(dto.getRemarks());
-        claim.setUpdatedAt(LocalDateTime.now());
-        claimRepo.save(claim);
-
-        ClaimActionEntity action = new ClaimActionEntity();
-        action.setClaimId(claim.getId());
-        action.setActionType(ClaimActionEntity.ActionType.Rejected);
-        action.setRemarks(dto.getRemarks());
-        action.setActionedBy(dto.getActionedBy());
-        action.setActionedAt(LocalDateTime.now());
-        claimActionsRepo.save(action);
-
-        logAudit(claim, oldStatus, "Rejected", dto.getRemarks(), dto.getActionedBy());
-        return claim;
-    }
-
     // ================= Verify Claim =================
     @Transactional
     public ClaimEntity verifyClaim(ClaimActionDTO dto) {
@@ -501,6 +464,133 @@ public class ClaimService {
         return claim;
     }
 
+    // ================= Resubmit Claim =================
+    @Transactional
+    public ClaimEntity resubmitClaim(ClaimActionDTO dto) {
+        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+        String oldStatus = claim.getStatus();
+        claim.setStatus("Resubmission Required");
+        claim.setRemarks(dto.getRemarks());
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        ClaimActionEntity action = new ClaimActionEntity();
+        action.setClaimId(claim.getId());
+        action.setActionType(ClaimActionEntity.ActionType.Resubmitted);
+        action.setRemarks(dto.getRemarks());
+        action.setActionedBy(dto.getActionedBy());
+        action.setActionedAt(LocalDateTime.now());
+        claimActionsRepo.save(action);
+
+        logAudit(claim, oldStatus, "Resubmission Required", dto.getRemarks(), dto.getActionedBy());
+
+        // ================= Notification =================
+        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
+
+        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+        String policyNumbers = policies.stream()
+                .map(PolicyEntity::getPolicyNumber)
+                .collect(Collectors.joining(", "));
+
+        String cin = claim.getCin();
+        String claimantFullName = claimant.getFullName();
+
+        try {
+            String mobile = claimant.getMobileNumber();
+            if (mobile != null && !mobile.isBlank()) {
+                String smsMessage = "Your life insurance claim with CIN:" + cin + " for the policy no. " + policyNumbers +
+                        " requires an additional document. Please visit My Business Profile for further details.";
+                if (mobile.startsWith("17")) {
+                    apiService.sendSms(smsMessage, mobile);
+                } else if (mobile.startsWith("77")) {
+                    apiService.sendSmsTcell(smsMessage, mobile);
+                }
+            }
+
+            if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+                String subject = "Life Insurance Claim - Resubmission Required";
+                String body = "Dear " + claimantFullName + ",\n\n"
+                        + "Thank you for submitting your claim. " + "\n\n"
+                        + "To proceed with the assessment, we kindly request you to provide additional documentation to support your claim in My Business Profile on our RICB Website.\n\n"
+                        + "Please submit at your earliest convenience to avoid any delay in processing. \n\n"
+                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                        + "Best regards,\n"
+                        + "RICB";
+
+                emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return claim;
+    }
+
+    // ================= Reject Claim =================
+    @Transactional
+    public ClaimEntity rejectClaim(ClaimActionDTO dto) {
+        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+        String oldStatus = claim.getStatus();
+        claim.setStatus("Rejected");
+        claim.setRemarks(dto.getRemarks());
+        claim.setUpdatedAt(LocalDateTime.now());
+        claimRepo.save(claim);
+
+        ClaimActionEntity action = new ClaimActionEntity();
+        action.setClaimId(claim.getId());
+        action.setActionType(ClaimActionEntity.ActionType.Rejected);
+        action.setRemarks(dto.getRemarks());
+        action.setActionedBy(dto.getActionedBy());
+        action.setActionedAt(LocalDateTime.now());
+        claimActionsRepo.save(action);
+
+        logAudit(claim, oldStatus, "Rejected", dto.getRemarks(), dto.getActionedBy());
+
+        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
+
+        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+        String policyNumbers = policies.stream()
+                .map(PolicyEntity::getPolicyNumber)
+                .collect(Collectors.joining(", "));
+
+        String cin = claim.getCin();
+        String claimantFullName = claimant.getFullName();
+
+        try {
+            String mobile = claimant.getMobileNumber();
+            if (mobile != null && !mobile.isBlank()) {
+                String smsMessage = "Your life insurance claim with CIN: " + cin + " for the policy no. " + policyNumbers + " has been found ineligible. Please visit My Business Profile for further details.";
+                if (mobile.startsWith("17")) {
+                    apiService.sendSms(smsMessage, mobile);
+                } else if (mobile.startsWith("77")) {
+                    apiService.sendSmsTcell(smsMessage, mobile);
+                }
+            }
+
+            if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+                String subject = "Life Insurance Claim - Rejected";
+                String body = "Dear " + claimantFullName + ",\n\n"
+                        + "Thank you for submitting your claim.\n\n"
+                        + "This is to inform you that after careful review and examination of the claim against the policy number " + policyNumbers + ", the claim has been found ineligible as per the policy terms and conditions. Therefore, we regret to inform you that the claim has been declined.\n\n"
+                        + "Kindly access your “My Business Profile” on the RICB website for detail report.\n\n"
+                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                        + "Thank you for your understanding.";
+
+                emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return claim;
+    }
+
     // ================= Approve Claim =================
     @Transactional
     public ClaimEntity approveClaim(ClaimActionDTO dto) {
@@ -521,11 +611,45 @@ public class ClaimService {
         claimActionsRepo.save(action);
 
         logAudit(claim, oldStatus, "Approved", dto.getRemarks(), dto.getActionedBy());
-        return claim;
-    }
 
-    public List<ClaimAuditEntity> getClaimAuditTrail(String cin) {
-        return claimAuditRepo.findByCinOrderByActionedAtDesc(cin);
+        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
+
+        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+        String policyNumbers = policies.stream()
+                .map(PolicyEntity::getPolicyNumber)
+                .collect(Collectors.joining(", "));
+
+        String cin = claim.getCin();
+        String claimantFullName = claimant.getFullName();
+
+        try {
+            String mobile = claimant.getMobileNumber();
+            if (mobile != null && !mobile.isBlank()) {
+                String smsMessage = "Your life insurance claim with CIN: " + cin + " for the policy no. " + policyNumbers + " is approved and the benefit amount will be deposited into the account of nominee(s).";
+                if (mobile.startsWith("17")) {
+                    apiService.sendSms(smsMessage, mobile);
+                } else if (mobile.startsWith("77")) {
+                    apiService.sendSmsTcell(smsMessage, mobile);
+                }
+            }
+
+            if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+                String subject = "Claim Approval Notification";        //"Life Insurance Claim - Approved";
+                String body = "Dear " + claimantFullName + ",\n\n"
+                        + "We are pleased to inform you that your claim [" + cin + "] has been reviewed and approved for the policy " + policyNumbers + ". The payment will be processed shortly and credited to the bank account number of nominee/s as per our internal procedures.\n\n"
+                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                        + "Best regards,\n"
+                        + "RICB";
+
+                emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return claim;
     }
 
     // ================= Track Records =================

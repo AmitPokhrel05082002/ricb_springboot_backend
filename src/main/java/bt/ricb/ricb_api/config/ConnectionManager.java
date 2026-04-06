@@ -35,7 +35,6 @@ public class ConnectionManager {
 
 			connection = DriverManager.getConnection(
 					"jdbc:oracle:thin:@192.168.0.101:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "ricb");
-//			        "jdbc:oracle:thin:@192.168.0.133:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_LI", "R1CB");
 
 			System.out.println("connection established");
 
@@ -50,6 +49,28 @@ public class ConnectionManager {
 		System.out.println("Oracle JDBC Driver Registered successful!");
 		return connection;
 	}
+
+    public static final Connection getOracleConnectionforims() throws Exception {
+        Connection connection = null;
+        try {
+            Class.forName("oracle.jdbc.driver.OracleDriver");
+
+            connection = DriverManager.getConnection(
+			        "jdbc:oracle:thin:@192.168.0.133:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_LI", "R1CB");
+
+            System.out.println("connection established");
+
+
+        } catch (ClassNotFoundException e) {
+
+            System.out.println("Connection Failed. Where is your Oracle JDBC Driver?");
+            e.printStackTrace();
+            return connection;
+        }
+
+        System.out.println("Oracle JDBC Driver Registered successful!");
+        return connection;
+    }
 
 	public static final Connection getLifeConnection() throws Exception {
 		Connection connection = null;

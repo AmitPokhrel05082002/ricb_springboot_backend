@@ -23,6 +23,9 @@ public class ClaimantEntity {
     @Column(name="email_address", nullable = false)
     private String emailAddress;
 
+    @Column(name="relation", nullable = false)
+    private String relation;
+
     @Column(name="dzongkhag_id", nullable = false)
     private Integer dzongkhagId;
 
@@ -55,6 +58,9 @@ public class ClaimantEntity {
 
     public String getEmailAddress() { return emailAddress; }
     public void setEmailAddress(String emailAddress) { this.emailAddress = emailAddress; }
+
+    public String getRelation() { return relation; }
+    public void setRelation(String relation) { this.relation = relation; }
 
     public Integer getDzongkhagId() { return dzongkhagId; }
     public void setDzongkhagId(Integer dzongkhagId) { this.dzongkhagId = dzongkhagId; }

@@ -6,9 +6,12 @@ public class ClaimantDTO {
     private String fullName;
     private String mobileNumber;
     private String emailAddress;
+    private String relation;
     private Integer dzongkhagId;  // frontend provides names
     private Integer gewogId;
     private Integer villageId;
+
+
 
     // Getters and Setters
     public String getCid() { return cid; }
@@ -22,6 +25,9 @@ public class ClaimantDTO {
 
     public String getEmailAddress() { return emailAddress; }
     public void setEmailAddress(String emailAddress) { this.emailAddress = emailAddress; }
+
+    public String getRelation() { return relation; }
+    public void setRelation(String relation) { this.relation = relation; }
 
     public Integer getDzongkhagId() { return dzongkhagId; }
     public void setDzongkhagId(Integer dzongkhagId) { this.dzongkhagId = dzongkhagId; }
