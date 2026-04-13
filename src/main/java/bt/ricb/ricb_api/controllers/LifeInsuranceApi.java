@@ -10,10 +10,12 @@ import bt.ricb.ricb_api.models.PolicyDiscountLoadDTO;
 import bt.ricb.ricb_api.models.PolicyDto;
 import bt.ricb.ricb_api.models.PolicyPremiumDto;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -34,6 +36,11 @@ import java.util.UUID;
 public class LifeInsuranceApi {
     @Autowired
     private LifeInsuranceDao lifeInsuarance;
+    private final RestTemplate restTemplate;
+
+    public LifeInsuranceApi(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     @PostMapping({"/insuranceMainDetails"})
     public ResponseEntity<String> lifeInsuranceMain(@RequestBody LifeInsuranceMainDto insuranceDetails) {
@@ -229,6 +236,25 @@ public class LifeInsuranceApi {
             return ResponseEntity.status(500).body(errorResponse);
         } finally {
             ConnectionManager.close(conn, rs, ps);
+        }
+    }
+
+    @GetMapping("/lifeInsurance_cert_online")
+    public ResponseEntity<String> getLifeInsuranceCertificate(
+            @RequestParam("policyNo") String policyNo) {
+
+        try {
+            String url = "https://apps.ricb.bt/san/report/lifeInsurance_cert_online.php?polNo=" + policyNo;
+
+            String response = restTemplate.getForObject(url, String.class);
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, "text/html")
+                    .body(response);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error fetching certificate: " + e.getMessage());
         }
     }
 }
