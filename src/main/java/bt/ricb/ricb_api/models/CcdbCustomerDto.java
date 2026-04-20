@@ -16,6 +16,7 @@ public class CcdbCustomerDto {
 	private String cid;
 	private int age;
 	private String tpn;
+    private int department_id;
 
 	public String getName() {
 		return this.name;
@@ -44,6 +45,14 @@ public class CcdbCustomerDto {
 	public void setNationality_id(int nationality_id) {
 		this.nationality_id = nationality_id;
 	}
+
+    public int getDepartment_id() {
+        return department_id;
+    }
+
+    public void setDepartment_id(int department_id) {
+        this.department_id = department_id;
+    }
 
 	public int getSalutation_id() {
 		return this.salutation_id;
