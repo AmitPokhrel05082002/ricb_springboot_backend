@@ -6,11 +6,13 @@ import bt.ricb.ricb_api.models.CcdbCustomerDto;
 import bt.ricb.ricb_api.models.FamilyRelationDto;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import javax.xml.parsers.ParserConfigurationException;
 import org.apache.http.HttpEntity;
 import org.apache.http.NameValuePair;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
@@ -121,6 +123,7 @@ public class ApiService {
     }
 
     public String createCustomer(CcdbCustomerDto customer) throws Exception {
+
         String apiUrl = "http://ccdb.ricb.bt/api/create_customer_mobile";
 
         String familiesFormatted = formatFamilyDetails(customer.getFamilies());
@@ -128,12 +131,13 @@ public class ApiService {
         String addressDetailsFormatted = formatAddressDetails(customer.getAddress_details());
 
         List<NameValuePair> params = new ArrayList<>();
+
         params.add(new BasicNameValuePair("name", customer.getName()));
         params.add(new BasicNameValuePair("nationality_id", String.valueOf(customer.getNationality_id())));
         params.add(new BasicNameValuePair("salutation_id", String.valueOf(customer.getSalutation_id())));
         params.add(new BasicNameValuePair("marital_status", String.valueOf(customer.getMarital_status())));
         params.add(new BasicNameValuePair("gender_id", String.valueOf(customer.getGender_id())));
-        params.add(new BasicNameValuePair("dob", String.valueOf(customer.getDob())));
+        params.add(new BasicNameValuePair("dob", customer.getDob()));
         params.add(new BasicNameValuePair("occupation_id", String.valueOf(customer.getOccupation_id())));
         params.add(new BasicNameValuePair("cid", customer.getCid()));
         params.add(new BasicNameValuePair("age", String.valueOf(customer.getAge())));
@@ -146,49 +150,35 @@ public class ApiService {
         params.add(new BasicNameValuePair("thram_no", customer.getThram_no()));
         params.add(new BasicNameValuePair("house_no", customer.getHouse_no()));
         params.add(new BasicNameValuePair("household_no", customer.getHousehold_no()));
+
+        // 🔥 REQUIRED FIX
+        params.add(new BasicNameValuePair("department_id", String.valueOf(customer.getDepartment_id())));
+
         params.add(new BasicNameValuePair("bankdetails", bankDetailsFormatted));
         params.add(new BasicNameValuePair("address_details", addressDetailsFormatted));
         params.add(new BasicNameValuePair("families", familiesFormatted));
 
-        URI uri = (new URIBuilder(apiUrl)).addParameters(params).build();
+        // Debug (optional but useful)
+        for (NameValuePair param : params) {
+            System.out.println(param.getName() + " = " + param.getValue());
+        }
 
-        System.out.println(uri);
-        CloseableHttpClient httpClient = HttpClients.createDefault();
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
 
-        try {
-            HttpPost request = new HttpPost(uri);
+            HttpPost request = new HttpPost(apiUrl);
 
+            // ✅ SEND IN BODY (CRITICAL FIX)
+            request.setEntity(new UrlEncodedFormEntity(params, StandardCharsets.UTF_8));
+
+            // Headers
             request.setHeader("Authorization", "Bearer " + this.bearerToken);
+            request.setHeader("Content-Type", "application/x-www-form-urlencoded");
 
-            CloseableHttpResponse response = httpClient.execute((HttpUriRequest) request);
+            try (CloseableHttpResponse response = httpClient.execute(request)) {
 
-            try {
                 HttpEntity entity = response.getEntity();
-                String responseBody = EntityUtils.toString(entity);
-
-                String str1 = responseBody;
-                if (response != null)
-                    response.close();
-                if (httpClient != null)
-                    httpClient.close();
-                return str1;
-            } catch (Throwable throwable) {
-                if (response != null)
-                    try {
-                        response.close();
-                    } catch (Throwable throwable1) {
-                        throwable.addSuppressed(throwable1);
-                    }
-                throw throwable;
+                return EntityUtils.toString(entity);
             }
-        } catch (Throwable throwable) {
-            if (httpClient != null)
-                try {
-                    httpClient.close();
-                } catch (Throwable throwable1) {
-                    throwable.addSuppressed(throwable1);
-                }
-            throw throwable;
         }
     }
 
