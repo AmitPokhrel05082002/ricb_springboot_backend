@@ -33,11 +33,15 @@ import java.util.Map;
 @RestController
 public class LifeInsuranceApi {
     @Autowired
-    private MinioService minioService;
-    private LifeInsuranceDao lifeInsuarance;
+    private final MinioService minioService;
+    private final LifeInsuranceDao lifeInsuarance;
     private final RestTemplate restTemplate;
 
-    public LifeInsuranceApi(RestTemplate restTemplate) {
+    public LifeInsuranceApi(MinioService minioService,
+                            LifeInsuranceDao lifeInsurance,
+                            RestTemplate restTemplate) {
+        this.minioService = minioService;
+        this.lifeInsuarance = lifeInsurance;
         this.restTemplate = restTemplate;
     }
 
