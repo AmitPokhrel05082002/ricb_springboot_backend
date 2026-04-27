@@ -4,12 +4,15 @@ import bt.ricb.ricb_api.models.AddressDto;
 import bt.ricb.ricb_api.models.BankDetailsDto;
 import bt.ricb.ricb_api.models.CcdbCustomerDto;
 import bt.ricb.ricb_api.models.FamilyRelationDto;
+
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import javax.xml.parsers.ParserConfigurationException;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.http.HttpEntity;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
@@ -18,6 +21,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
@@ -88,9 +92,9 @@ public class ApiService {
         String passphrase = "12345678";
 
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
-                .queryParam("action", new Object[] { "send" }).queryParam("username", new Object[] { username })
-                .queryParam("passphrase", new Object[] { passphrase })
-                .queryParam("message", new Object[] { smsContent }).queryParam("phone", new Object[] { mobileNo });
+                .queryParam("action", new Object[]{"send"}).queryParam("username", new Object[]{username})
+                .queryParam("passphrase", new Object[]{passphrase})
+                .queryParam("message", new Object[]{smsContent}).queryParam("phone", new Object[]{mobileNo});
 
         return this.restTemplate.getForEntity(builder.toUriString(), String.class, new Object[0]);
     }
@@ -101,9 +105,9 @@ public class ApiService {
         String passphrase = "123456";
 
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
-                .queryParam("action", new Object[] { "send" }).queryParam("username", new Object[] { username })
-                .queryParam("passphrase", new Object[] { passphrase })
-                .queryParam("message", new Object[] { smsContent }).queryParam("phone", new Object[] { mobileNo });
+                .queryParam("action", new Object[]{"send"}).queryParam("username", new Object[]{username})
+                .queryParam("passphrase", new Object[]{passphrase})
+                .queryParam("message", new Object[]{smsContent}).queryParam("phone", new Object[]{mobileNo});
 
         return this.restTemplate.getForEntity(builder.toUriString(), String.class, new Object[0]);
     }
@@ -113,7 +117,7 @@ public class ApiService {
             throws ParserConfigurationException, SAXException, IOException, JSONException {
         String apiUrl = "http://192.168.0.205/EFIMORICBCMS/ServiceIntegration/eFIMOIntegration.asmx/GetLoansData_JSON";
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl).queryParam("customerid",
-                new Object[] { cidNo });
+                new Object[]{cidNo});
         ResponseEntity<String> accountData = this.restTemplate.getForEntity(builder.toUriString(), String.class,
                 new Object[0]);
         String data = (String) accountData.getBody();
@@ -122,60 +126,26 @@ public class ApiService {
         return pageName;
     }
 
+
     public String createCustomer(CcdbCustomerDto customer) throws Exception {
 
         String apiUrl = "http://ccdb.ricb.bt/api/create_customer_mobile";
 
-        String familiesFormatted = formatFamilyDetails(customer.getFamilies());
-        String bankDetailsFormatted = formatBankDetails(customer.getBankdetails());
-        String addressDetailsFormatted = formatAddressDetails(customer.getAddress_details());
+        ObjectMapper mapper = new ObjectMapper();
+        String jsonBody = mapper.writeValueAsString(customer);
 
-        List<NameValuePair> params = new ArrayList<>();
-
-        params.add(new BasicNameValuePair("name", customer.getName()));
-        params.add(new BasicNameValuePair("nationality_id", String.valueOf(customer.getNationality_id())));
-        params.add(new BasicNameValuePair("salutation_id", String.valueOf(customer.getSalutation_id())));
-        params.add(new BasicNameValuePair("marital_status", String.valueOf(customer.getMarital_status())));
-        params.add(new BasicNameValuePair("gender_id", String.valueOf(customer.getGender_id())));
-        params.add(new BasicNameValuePair("dob", customer.getDob()));
-        params.add(new BasicNameValuePair("occupation_id", String.valueOf(customer.getOccupation_id())));
-        params.add(new BasicNameValuePair("cid", customer.getCid()));
-        params.add(new BasicNameValuePair("age", String.valueOf(customer.getAge())));
-        params.add(new BasicNameValuePair("tpn", customer.getTpn()));
-        params.add(new BasicNameValuePair("mobile_no", customer.getMobile_no()));
-        params.add(new BasicNameValuePair("alternative_mobile_no", customer.getAlternative_mobile_no()));
-        params.add(new BasicNameValuePair("telephone_no", customer.getTelephone_no()));
-        params.add(new BasicNameValuePair("email_id", customer.getEmail_id()));
-        params.add(new BasicNameValuePair("alternative_email", customer.getAlternative_email()));
-        params.add(new BasicNameValuePair("thram_no", customer.getThram_no()));
-        params.add(new BasicNameValuePair("house_no", customer.getHouse_no()));
-        params.add(new BasicNameValuePair("household_no", customer.getHousehold_no()));
-
-        // 🔥 REQUIRED FIX
-        params.add(new BasicNameValuePair("department_id", String.valueOf(customer.getDepartment_id())));
-
-        params.add(new BasicNameValuePair("bankdetails", bankDetailsFormatted));
-        params.add(new BasicNameValuePair("address_details", addressDetailsFormatted));
-        params.add(new BasicNameValuePair("families", familiesFormatted));
-
-        // Debug (optional but useful)
-        for (NameValuePair param : params) {
-            System.out.println(param.getName() + " = " + param.getValue());
-        }
+        System.out.println("REQUEST JSON = " + jsonBody); // 🔥 debug
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
 
             HttpPost request = new HttpPost(apiUrl);
 
-            // ✅ SEND IN BODY (CRITICAL FIX)
-            request.setEntity(new UrlEncodedFormEntity(params, StandardCharsets.UTF_8));
+            request.setEntity(new StringEntity(jsonBody, StandardCharsets.UTF_8));
 
-            // Headers
             request.setHeader("Authorization", "Bearer " + this.bearerToken);
-            request.setHeader("Content-Type", "application/x-www-form-urlencoded");
+            request.setHeader("Content-Type", "application/json");
 
             try (CloseableHttpResponse response = httpClient.execute(request)) {
-
                 HttpEntity entity = response.getEntity();
                 return EntityUtils.toString(entity);
             }
@@ -213,11 +183,36 @@ public class ApiService {
         return formatted.toString();
     }
 
-    private String formatAddressDetails(AddressDto addressDetails) {
-        return "{address_type_id:\"" + addressDetails.getAddress_type_id() + "\",mailing_address:\""
-                + addressDetails.getMailing_address() + "\",country_id:\"" + addressDetails.getCountry_id()
-                + "\",dzongkhag_id:\"" + addressDetails.getDzongkhag_id() + "\",dungkhag_id:\""
-                + addressDetails.getDungkhag_id() + "\",gewog_id:\"" + addressDetails.getGewog_id() + "\",village_id:\""
-                + addressDetails.getVillage_id() + "\"}";
+    private String formatAddressDetails(List<AddressDto> addressList) {
+
+        if (addressList == null || addressList.isEmpty()) {
+            return "[]";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[");
+
+        for (int i = 0; i < addressList.size(); i++) {
+
+            AddressDto addressDetails = addressList.get(i);
+
+            sb.append("{")
+                    .append("address_type_id:\"").append(addressDetails.getAddress_type_id()).append("\",")
+                    .append("mailing_address:\"").append(addressDetails.getMailing_address()).append("\",")
+                    .append("country_id:\"").append(addressDetails.getCountry_id()).append("\",")
+                    .append("dzongkhag_id:\"").append(addressDetails.getDzongkhag_id()).append("\",")
+                    .append("dungkhag_id:\"").append(addressDetails.getDungkhag_id()).append("\",")
+                    .append("gewog_id:\"").append(addressDetails.getGewog_id()).append("\",")
+                    .append("village_id:\"").append(addressDetails.getVillage_id()).append("\"")
+                    .append("}");
+
+            if (i < addressList.size() - 1) {
+                sb.append(",");
+            }
+        }
+
+        sb.append("]");
+
+        return sb.toString();
     }
 }
