@@ -10,6 +10,7 @@ public class PolicyDTO {
     private String nomineeName;
     private Double sumAssured;
     private String status;
+    private String claimStatus;
     private String branchCode;
 
     // Getters and Setters
@@ -33,6 +34,9 @@ public class PolicyDTO {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getClaimStatus() { return claimStatus; }
+    public void setClaimStatus(String claimStatus) { this.claimStatus = claimStatus; }
 
     public String getBranchCode() { return branchCode; }
     public void setBranchCode(String branchCode) { this.branchCode = branchCode; }

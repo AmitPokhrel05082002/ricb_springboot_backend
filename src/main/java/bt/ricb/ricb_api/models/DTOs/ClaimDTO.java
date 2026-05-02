@@ -10,7 +10,7 @@ public class ClaimDTO {
     private String placeOfDeath;
     private String deathType;   // Natural, Accidental, Suicide
     private String causeOfDeath;
-    private Integer nearestBranchId;
+    private String nearestBranchId;
 
     // Getters and Setters
     public String getClaimType() { return claimType; }
@@ -31,6 +31,6 @@ public class ClaimDTO {
     public String getCauseOfDeath() { return causeOfDeath; }
     public void setCauseOfDeath(String causeOfDeath) { this.causeOfDeath = causeOfDeath; }
 
-    public Integer getNearestBranchId() { return nearestBranchId; }
-    public void setNearestBranchId(Integer nearestBranchId) { this.nearestBranchId = nearestBranchId; }
+    public String getNearestBranchId() { return nearestBranchId; }
+    public void setNearestBranchId(String nearestBranchId) { this.nearestBranchId = nearestBranchId; }
 }

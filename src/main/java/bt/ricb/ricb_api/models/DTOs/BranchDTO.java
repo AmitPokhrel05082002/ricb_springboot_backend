@@ -1,19 +1,23 @@
 package bt.ricb.ricb_api.models.DTOs;
 
-import java.sql.Timestamp;
-
 public class BranchDTO {
 
-    private Integer id;
-    private String name;
-    private Timestamp createdAt;
+    private String branchCode;
+    private String branchName;
 
-    public Integer getId() { return id; }
-    public void setId(Integer id) { this.id = id; }
+    public String getBranchCode() {
+        return branchCode;
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setBranchCode(String branchCode) {
+        this.branchCode = branchCode;
+    }
 
-    public Timestamp getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
+    public String getBranchName() {
+        return branchName;
+    }
+
+    public void setBranchName(String branchName) {
+        this.branchName = branchName;
+    }
 }

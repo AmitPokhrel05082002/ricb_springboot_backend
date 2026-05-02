@@ -2,9 +2,8 @@ package bt.ricb.ricb_api.models.DTOs;
 
 import java.util.List;
 
-public class ClaimActionDTO {
+public class ClaimCompleteDTO {
     private String cin;
-    private List<String> policyNumbers;
     private String remarks;
     private Integer actionedBy;
 
@@ -12,15 +11,10 @@ public class ClaimActionDTO {
     public String getCin() { return cin; }
     public void setCin(String cin) { this.cin = cin; }
 
-    public List<String> getPolicyNumbers() {
-        return policyNumbers;
-    }
-    public void setPolicyNumbers(List<String> policyNumbers) {
-        this.policyNumbers = policyNumbers;
-    }
     public String getRemarks() { return remarks; }
     public void setRemarks(String remarks) { this.remarks = remarks; }
 
     public Integer getActionedBy() { return actionedBy; }
     public void setActionedBy(Integer actionedBy) { this.actionedBy = actionedBy; }
 }
+

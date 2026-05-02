@@ -14,9 +14,6 @@ public class PayeeEntity {
     @Column(name="claimant_id", nullable = false)
     private Integer claimantId;
 
-    @Column(name="same_as_claimant", nullable = false)
-    private Integer sameAsClaimant;
-
     @Column(nullable = false, length = 11)
     private String cid;
 
@@ -46,9 +43,6 @@ public class PayeeEntity {
 
     public Integer getClaimantId() { return claimantId; }
     public void setClaimantId(Integer claimantId) { this.claimantId = claimantId; }
-
-    public Integer getSameAsClaimant() { return sameAsClaimant; }
-    public void setSameAsClaimant(Integer sameAsClaimant) { this.sameAsClaimant = sameAsClaimant; }
 
     public String getCid() { return cid; }
     public void setCid(String cid) { this.cid = cid; }

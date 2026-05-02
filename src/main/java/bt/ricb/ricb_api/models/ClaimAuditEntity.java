@@ -17,6 +17,9 @@ public class ClaimAuditEntity {
     @Column(name = "cin", nullable = false)
     private String cin;
 
+    @Column(name = "policy_number")
+    private String policyNumber;
+
     @Column(name = "previous_status")
     private String previousStatus;
 
@@ -41,6 +44,9 @@ public class ClaimAuditEntity {
 
     public String getCin() { return cin; }
     public void setCin(String cin) { this.cin = cin; }
+
+    public String getPolicyNumber() { return policyNumber; }
+    public void setPolicyNumber(String policyNumber) { this.policyNumber = policyNumber; }
 
     public String getPreviousStatus() { return previousStatus; }
     public void setPreviousStatus(String previousStatus) { this.previousStatus = previousStatus; }

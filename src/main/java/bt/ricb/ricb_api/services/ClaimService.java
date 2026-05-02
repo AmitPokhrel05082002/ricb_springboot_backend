@@ -1,5 +1,6 @@
 package bt.ricb.ricb_api.services;
 
+import bt.ricb.ricb_api.config.ConnectionManager;
 import bt.ricb.ricb_api.models.*;
 import bt.ricb.ricb_api.models.DTOs.*;
 import bt.ricb.ricb_api.repository.*;
@@ -14,9 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class ClaimService {
@@ -61,8 +67,7 @@ public class ClaimService {
     private VillageRepository villageRepo;
     @Autowired
     private BankRepository bankRepo;
-    @Autowired
-    private BranchRepository branchRepo;
+
 
 
     // ================= Claim Status Counts =================
@@ -75,7 +80,7 @@ public class ClaimService {
         counts.put("approved", claimRepo.countByStatus("Approved"));
         counts.put("rejected", claimRepo.countByStatus("Rejected"));
         counts.put("resubmission", claimRepo.countByStatus("Resubmission Required"));
-        counts.put("verified", claimRepo.countByStatus("Verified"));
+        counts.put("Completed", claimRepo.countByStatus("Completed"));
 
         return counts;
     }
@@ -158,6 +163,7 @@ public class ClaimService {
                 policy.setSumAssured(policyDTO.getSumAssured());
                 policy.setBranchCode(policyDTO.getBranchCode());
                 policy.setStatus(policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active");
+                policy.setClaimStatus("Pending");
                 policy.setCreatedAt(LocalDateTime.now());
 
                 policiesToInsert.add(policy);
@@ -178,7 +184,6 @@ public class ClaimService {
         PayeeDTO payeeDTO = dto.getPayee();
         PayeeEntity payee = new PayeeEntity();
         payee.setClaimantId(claimant.getId());
-        payee.setSameAsClaimant("Yes".equalsIgnoreCase(payeeDTO.getSameAsClaimant()) ? 1 : 0);
         payee.setCid(payeeDTO.getCid()); // duplicate allowed
         payee.setAccountHolderName(payeeDTO.getAccountHolderName());
         payee.setAccountNumber(payeeDTO.getAccountNumber());
@@ -222,44 +227,35 @@ public class ClaimService {
 
         claimRepo.saveAndFlush(claim);
         // ================= Documents =================
-        if (file != null && !file.isEmpty()) {
-
-            String originalFileName = file.getOriginalFilename();
-
-            if (originalFileName == null || !originalFileName.toLowerCase().endsWith(".zip")) {
-                throw new RuntimeException("Invalid file type. Only ZIP files are allowed.");
-            }
-
-            long maxSizeBytes = 20L * 1024 * 1024;
-            if (file.getSize() > maxSizeBytes) {
-                throw new RuntimeException("File size exceeds 20 MB.");
-            }
-
-            try {
-                String fileName = "claims/" + claim.getCin() + "_" + originalFileName;
-
-                String fileUrl = s3Service.uploadFile(
-                        fileName,
-                        file.getInputStream(),
-                        file.getSize()
-                );
-
-                ClaimDocumentsEntity doc = new ClaimDocumentsEntity();
-                doc.setClaimId(claim.getId());
-                doc.setZipFilePath(fileUrl);
-                doc.setFileSizeKb((int) (file.getSize() / 1024));
-                doc.setUploadedAt(LocalDateTime.now());
-
-                claimDocumentsRepo.save(doc);
-
-            } catch (Exception e) {
-                throw new RuntimeException("File upload failed: " + e.getMessage());
-            }
-
-        } else {
+        if (file == null || file.isEmpty()) {
             throw new RuntimeException("No file uploaded. A ZIP file is required.");
         }
 
+        // ✅ Single validation method (handles everything)
+        validateZipFile(file);
+
+        try {
+            String originalFileName = file.getOriginalFilename().replaceAll("\\s+", "_");
+
+            String fileName = "claims/" + claim.getCin() + "_" + originalFileName;
+
+            String fileUrl = s3Service.uploadFile(
+                    fileName,
+                    file.getInputStream(),
+                    file.getSize()
+            );
+
+            ClaimDocumentsEntity doc = new ClaimDocumentsEntity();
+            doc.setClaimId(claim.getId());
+            doc.setZipFilePath(fileUrl);
+            doc.setFileSizeKb((int) (file.getSize() / 1024));
+            doc.setUploadedAt(LocalDateTime.now());
+
+            claimDocumentsRepo.save(doc);
+
+        } catch (Exception e) {
+            throw new RuntimeException("File upload failed: " + e.getMessage(), e);
+        }
         // ================= Notification =================
         String cin = claim.getCin();
         String claimantFullName = claimant.getFullName();
@@ -381,7 +377,6 @@ public class ClaimService {
         payeeDTO.setBankId(payee.getBankId());
         payeeDTO.setAccountNumber(payee.getAccountNumber());
         payeeDTO.setMobileNumber(payee.getMobileNumber());
-        payeeDTO.setSameAsClaimant(payee.getSameAsClaimant() == 1 ? "Yes" : "No");
 
         // Build PolicyHolderDTO
         PolicyHolderDTO phDTO = new PolicyHolderDTO();
@@ -401,7 +396,7 @@ public class ClaimService {
             policyDTO.setSumAssured(policy.getSumAssured());
             policyDTO.setBranchCode(policy.getBranchCode());
             policyDTO.setStatus(policy.getStatus());
-
+            policyDTO.setClaimStatus(policy.getClaimStatus());
             policyDTOList.add(policyDTO);
         }
 
@@ -441,40 +436,73 @@ public class ClaimService {
         claimAuditRepo.save(audit);
     }
 
-    // ================= Verify Claim =================
+    // ================= Complete Claim =================
     @Transactional
-    public ClaimEntity verifyClaim(ClaimActionDTO dto) {
+    public ClaimEntity completeClaim(ClaimCompleteDTO dto) {
+
         ClaimEntity claim = claimRepo.findByCin(dto.getCin())
                 .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+
+        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+
+        boolean hasPending = policies.stream()
+                .anyMatch(p -> "Pending".equalsIgnoreCase(p.getClaimStatus()));
+
+        if (hasPending) {
+            throw new RuntimeException("Cannot complete claim. Some policies are still pending.");
+        }
+
+        boolean allApproved = policies.stream()
+                .allMatch(p -> "Approved".equalsIgnoreCase(p.getClaimStatus()));
+
+        boolean allRejected = policies.stream()
+                .allMatch(p -> "Rejected".equalsIgnoreCase(p.getClaimStatus()));
+
         String oldStatus = claim.getStatus();
-        claim.setStatus("Verified");
+        String newStatus;
+
+        if (allApproved) {
+            newStatus = "Approved";
+        } else if (allRejected) {
+            newStatus = "Rejected";
+        } else {
+            newStatus = "Completed";
+        }
+
+        claim.setStatus(newStatus);
         claim.setRemarks(dto.getRemarks());
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);
 
         ClaimActionEntity action = new ClaimActionEntity();
         action.setClaimId(claim.getId());
-        action.setActionType(ClaimActionEntity.ActionType.Verified);
+        action.setActionType(ClaimActionEntity.ActionType.Completed);
         action.setRemarks(dto.getRemarks());
         action.setActionedBy(dto.getActionedBy());
         action.setActionedAt(LocalDateTime.now());
         claimActionsRepo.save(action);
 
-        logAudit(claim, oldStatus, "Verified", dto.getRemarks(), dto.getActionedBy());
+        logAudit(claim, oldStatus, newStatus, dto.getRemarks(), dto.getActionedBy());
+
         return claim;
     }
 
     // ================= Resubmit Claim =================
     @Transactional
-    public ClaimEntity resubmitClaim(ClaimActionDTO dto) {
+    public ClaimEntity resubmitClaim(ClaimCompleteDTO dto) {
+
         ClaimEntity claim = claimRepo.findByCin(dto.getCin())
                 .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+
         String oldStatus = claim.getStatus();
+
+        // ================= CLAIM UPDATE ONLY =================
         claim.setStatus("Resubmission Required");
         claim.setRemarks(dto.getRemarks());
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);
 
+        // ================= CLAIM ACTION (CLAIM LEVEL ONLY) =================
         ClaimActionEntity action = new ClaimActionEntity();
         action.setClaimId(claim.getId());
         action.setActionType(ClaimActionEntity.ActionType.Resubmitted);
@@ -483,25 +511,30 @@ public class ClaimService {
         action.setActionedAt(LocalDateTime.now());
         claimActionsRepo.save(action);
 
+        // ================= AUDIT (CLAIM LEVEL ONLY) =================
         logAudit(claim, oldStatus, "Resubmission Required", dto.getRemarks(), dto.getActionedBy());
 
-        // ================= Notification =================
+        // ================= NOTIFICATION =================
         ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
-                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
+                .orElseThrow(() -> new RuntimeException("Claimant not found"));
 
         List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+
+        // ONLY for message display (NOT action-based)
         String policyNumbers = policies.stream()
                 .map(PolicyEntity::getPolicyNumber)
                 .collect(Collectors.joining(", "));
 
-        String cin = claim.getCin();
-        String claimantFullName = claimant.getFullName();
-
         try {
             String mobile = claimant.getMobileNumber();
+
             if (mobile != null && !mobile.isBlank()) {
-                String smsMessage = "Your life insurance claim with CIN:" + cin + " for the policy no. " + policyNumbers +
-                        " requires an additional document. Please visit My Business Profile for further details.";
+
+                String smsMessage =
+                        "Your life insurance claim with CIN:" + claim.getCin() +
+                                " for the policy no. " + policyNumbers +
+                                " requires additional documents. Please visit My Business Profile for details.";
+
                 if (mobile.startsWith("17")) {
                     apiService.sendSms(smsMessage, mobile);
                 } else if (mobile.startsWith("77")) {
@@ -510,14 +543,16 @@ public class ClaimService {
             }
 
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+
                 String subject = "Life Insurance Claim - Resubmission Required";
-                String body = "Dear " + claimantFullName + ",\n\n"
-                        + "Thank you for submitting your claim. " + "\n\n"
-                        + "To proceed with the assessment, we kindly request you to provide additional documentation to support your claim in My Business Profile on our RICB Website.\n\n"
-                        + "Please submit at your earliest convenience to avoid any delay in processing. \n\n"
-                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
-                        + "Best regards,\n"
-                        + "RICB";
+
+                String body =
+                        "Dear " + claimant.getFullName() + ",\n\n" +
+                                "Thank you for submitting your claim.\n\n" +
+                                "To proceed with the assessment, we kindly request you to provide additional documentation.\n\n" +
+                                "Please upload required documents in My Business Profile on the RICB website.\n\n" +
+                                "Should you require any further clarifications, please contact 1818 or email contactus@ricb.bt.\n\n" +
+                                "Best regards,\nRICB";
 
                 emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
             }
@@ -531,40 +566,82 @@ public class ClaimService {
 
     // ================= Reject Claim =================
     @Transactional
-    public ClaimEntity rejectClaim(ClaimActionDTO dto) {
+    public void rejectPolicies(ClaimActionDTO dto) {
+
         ClaimEntity claim = claimRepo.findByCin(dto.getCin())
-                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
-        String oldStatus = claim.getStatus();
-        claim.setStatus("Rejected");
+                .orElseThrow(() -> new RuntimeException("Claim not found for CIN: " + dto.getCin()));
+
+        String previousStatus = claim.getStatus(); // keep claim status unchanged (Pending)
+
+        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+
+        // filter selected policies
+        List<PolicyEntity> selectedPolicies = policies.stream()
+                .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
+                .toList();
+
+        if (selectedPolicies.isEmpty()) {
+            throw new RuntimeException("No matching policies found for rejection");
+        }
+
+        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                .orElseThrow(() -> new RuntimeException("Claimant not found"));
+
+        List<String> rejectedPolicyNumbers = new ArrayList<>();
+
+        for (PolicyEntity policy : selectedPolicies) {
+
+            // ================= POLICY UPDATE =================
+            policy.setClaimStatus("Rejected");
+            policy.setRemarks(dto.getRemarks());
+            policy.setUpdatedAt(LocalDateTime.now());
+
+            rejectedPolicyNumbers.add(policy.getPolicyNumber());
+
+            // ================= CLAIM ACTION =================
+            ClaimActionEntity action = new ClaimActionEntity();
+            action.setClaimId(claim.getId());
+            action.setPolicyNumber(policy.getPolicyNumber());
+            action.setActionType(ClaimActionEntity.ActionType.Rejected);
+            action.setRemarks(dto.getRemarks());
+            action.setActionedBy(dto.getActionedBy());
+            action.setActionedAt(LocalDateTime.now());
+            claimActionsRepo.save(action);
+
+            // ================= CLAIM AUDIT =================
+            ClaimAuditEntity audit = new ClaimAuditEntity();
+            audit.setClaimId(claim.getId());
+            audit.setCin(claim.getCin());
+            audit.setPolicyNumber(policy.getPolicyNumber());
+            audit.setPreviousStatus("Pending"); // FIXED (not IN_PROGRESS)
+            audit.setNewStatus("Rejected");
+            audit.setRemarks(dto.getRemarks());
+            audit.setActionedBy(dto.getActionedBy());
+            audit.setActionedAt(LocalDateTime.now());
+            claimAuditRepo.save(audit);
+        }
+
+        policyRepo.saveAll(selectedPolicies);
+
+        // ================= CLAIM STATUS (STAYS PENDING) =================
+        claim.setStatus("Pending");
         claim.setRemarks(dto.getRemarks());
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);
 
-        ClaimActionEntity action = new ClaimActionEntity();
-        action.setClaimId(claim.getId());
-        action.setActionType(ClaimActionEntity.ActionType.Rejected);
-        action.setRemarks(dto.getRemarks());
-        action.setActionedBy(dto.getActionedBy());
-        action.setActionedAt(LocalDateTime.now());
-        claimActionsRepo.save(action);
-
-        logAudit(claim, oldStatus, "Rejected", dto.getRemarks(), dto.getActionedBy());
-
-        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
-                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
-
-        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
-        String policyNumbers = policies.stream()
-                .map(PolicyEntity::getPolicyNumber)
-                .collect(Collectors.joining(", "));
-
-        String cin = claim.getCin();
-        String claimantFullName = claimant.getFullName();
-
+        // ================= SMS + EMAIL (ONLY REJECTED POLICIES) =================
         try {
+
+            String policyList = String.join(", ", rejectedPolicyNumbers);
+
             String mobile = claimant.getMobileNumber();
             if (mobile != null && !mobile.isBlank()) {
-                String smsMessage = "Your life insurance claim with CIN: " + cin + " for the policy no. " + policyNumbers + " has been found ineligible. Please visit My Business Profile for further details.";
+
+                String smsMessage =
+                        "Your life insurance claim with CIN: " + claim.getCin() +
+                                " for the policy no. " + policyList +
+                                " has been found ineligible. Please visit My Business Profile for further details.";
+
                 if (mobile.startsWith("17")) {
                     apiService.sendSms(smsMessage, mobile);
                 } else if (mobile.startsWith("77")) {
@@ -573,60 +650,166 @@ public class ClaimService {
             }
 
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+
                 String subject = "Life Insurance Claim - Rejected";
-                String body = "Dear " + claimantFullName + ",\n\n"
-                        + "Thank you for submitting your claim.\n\n"
-                        + "This is to inform you that after careful review and examination of the claim against the policy number " + policyNumbers + ", the claim has been found ineligible as per the policy terms and conditions. Therefore, we regret to inform you that the claim has been declined.\n\n"
-                        + "Kindly access your “My Business Profile” on the RICB website for detail report.\n\n"
-                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
-                        + "Thank you for your understanding.";
+
+                String body =
+                        "Dear " + claimant.getFullName() + ",\n\n" +
+                                "Thank you for submitting your claim.\n\n" +
+                                "This is to inform you that after careful review and examination of the claim against the policy number " +
+                                policyList +
+                                ", the claim has been found ineligible as per the policy terms and conditions. Therefore, we regret to inform you that the claim has been declined.\n\n" +
+                                "Kindly access your “My Business Profile” on the RICB website for detail report.\n\n" +
+                                "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n" +
+                                "Thank you for your understanding.";
 
                 emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            e.printStackTrace(); // don’t break transaction due to notification failure
         }
-
-        return claim;
     }
 
     // ================= Approve Claim =================
+//    @Transactional
+//    public ClaimEntity approveClaim(ClaimActionDTO dto) {
+//        ClaimEntity claim = claimRepo.findByCin(dto.getCin())
+//                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
+//        String oldStatus = claim.getStatus();
+//        claim.setStatus("Approved");
+//        claim.setRemarks(dto.getRemarks());
+//        claim.setUpdatedAt(LocalDateTime.now());
+//        claimRepo.save(claim);
+//
+//        ClaimActionEntity action = new ClaimActionEntity();
+//        action.setClaimId(claim.getId());
+//        action.setActionType(ClaimActionEntity.ActionType.Approved);
+//        action.setRemarks(dto.getRemarks());
+//        action.setActionedBy(dto.getActionedBy());
+//        action.setActionedAt(LocalDateTime.now());
+//        claimActionsRepo.save(action);
+//
+//        logAudit(claim, oldStatus, "Approved", dto.getRemarks(), dto.getActionedBy());
+//
+//        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+//                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
+//
+//        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+//        String policyNumbers = policies.stream()
+//                .map(PolicyEntity::getPolicyNumber)
+//                .collect(Collectors.joining(", "));
+//
+//        String cin = claim.getCin();
+//        String claimantFullName = claimant.getFullName();
+//
+//        try {
+//            String mobile = claimant.getMobileNumber();
+//            if (mobile != null && !mobile.isBlank()) {
+//                String smsMessage = "Your life insurance claim with CIN: " + cin + " for the policy no. " + policyNumbers + " is approved and the benefit amount will be deposited into the account of nominee(s).";
+//                if (mobile.startsWith("17")) {
+//                    apiService.sendSms(smsMessage, mobile);
+//                } else if (mobile.startsWith("77")) {
+//                    apiService.sendSmsTcell(smsMessage, mobile);
+//                }
+//            }
+//
+//            if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
+//                String subject = "Claim Approval Notification";        //"Life Insurance Claim - Approved";
+//                String body = "Dear " + claimantFullName + ",\n\n"
+//                        + "We are pleased to inform you that your claim [" + cin + "] has been reviewed and approved for the policy " + policyNumbers + ". The payment will be processed shortly and credited to the bank account number of nominee/s as per our internal procedures.\n\n"
+//                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+//                        + "Best regards,\n"
+//                        + "RICB";
+//
+//                emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
+//            }
+//
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//
+//        return claim;
+//    }
+
+    // ================= Approve Claim =================
     @Transactional
-    public ClaimEntity approveClaim(ClaimActionDTO dto) {
+    public void approvePolicies(ClaimActionDTO dto) {
+
         ClaimEntity claim = claimRepo.findByCin(dto.getCin())
-                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + dto.getCin()));
-        String oldStatus = claim.getStatus();
-        claim.setStatus("Approved");
+                .orElseThrow(() -> new RuntimeException("Claim not found for CIN: " + dto.getCin()));
+
+        String previousStatus = claim.getStatus(); // usually Pending
+
+        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+
+        // filter selected policies
+        List<PolicyEntity> selectedPolicies = policies.stream()
+                .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
+                .toList();
+
+        if (selectedPolicies.isEmpty()) {
+            throw new RuntimeException("No matching policies found for approval");
+        }
+
+        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
+                .orElseThrow(() -> new RuntimeException("Claimant not found"));
+
+        List<String> approvedPolicyNumbers = new ArrayList<>();
+
+        for (PolicyEntity policy : selectedPolicies) {
+
+            // ================= POLICY UPDATE =================
+            policy.setClaimStatus("Approved");
+            policy.setRemarks(dto.getRemarks());
+            policy.setUpdatedAt(LocalDateTime.now());
+
+            approvedPolicyNumbers.add(policy.getPolicyNumber());
+
+            // ================= CLAIM ACTION =================
+            ClaimActionEntity action = new ClaimActionEntity();
+            action.setClaimId(claim.getId());
+            action.setPolicyNumber(policy.getPolicyNumber());
+            action.setActionType(ClaimActionEntity.ActionType.Approved);
+            action.setRemarks(dto.getRemarks());
+            action.setActionedBy(dto.getActionedBy());
+            action.setActionedAt(LocalDateTime.now());
+            claimActionsRepo.save(action);
+
+            // ================= CLAIM AUDIT =================
+            ClaimAuditEntity audit = new ClaimAuditEntity();
+            audit.setClaimId(claim.getId());
+            audit.setCin(claim.getCin());
+            audit.setPolicyNumber(policy.getPolicyNumber());
+            audit.setPreviousStatus("Pending");
+            audit.setNewStatus("Approved");
+            audit.setRemarks(dto.getRemarks());
+            audit.setActionedBy(dto.getActionedBy());
+            audit.setActionedAt(LocalDateTime.now());
+            claimAuditRepo.save(audit);
+        }
+
+        policyRepo.saveAll(selectedPolicies);
+
+        // ================= CLAIM STATUS (STAYS PENDING / OR COMPLETED IF YOU WANT LATER) =================
+        claim.setStatus("Pending");
         claim.setRemarks(dto.getRemarks());
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);
 
-        ClaimActionEntity action = new ClaimActionEntity();
-        action.setClaimId(claim.getId());
-        action.setActionType(ClaimActionEntity.ActionType.Approved);
-        action.setRemarks(dto.getRemarks());
-        action.setActionedBy(dto.getActionedBy());
-        action.setActionedAt(LocalDateTime.now());
-        claimActionsRepo.save(action);
-
-        logAudit(claim, oldStatus, "Approved", dto.getRemarks(), dto.getActionedBy());
-
-        ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
-                .orElseThrow(() -> new RuntimeException("Claimant not found for CIN: " + dto.getCin()));
-
-        List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
-        String policyNumbers = policies.stream()
-                .map(PolicyEntity::getPolicyNumber)
-                .collect(Collectors.joining(", "));
-
-        String cin = claim.getCin();
-        String claimantFullName = claimant.getFullName();
-
+        // ================= SMS + EMAIL (ONLY APPROVED POLICIES) =================
         try {
+
+            String policyList = String.join(", ", approvedPolicyNumbers);
+
             String mobile = claimant.getMobileNumber();
             if (mobile != null && !mobile.isBlank()) {
-                String smsMessage = "Your life insurance claim with CIN: " + cin + " for the policy no. " + policyNumbers + " is approved and the benefit amount will be deposited into the account of nominee(s).";
+
+                String smsMessage =
+                        "Your life insurance claim with CIN: " + claim.getCin() +
+                                " for the policy no. " + policyList +
+                                " is approved and the benefit amount will be deposited into the account of nominee(s).";
+
                 if (mobile.startsWith("17")) {
                     apiService.sendSms(smsMessage, mobile);
                 } else if (mobile.startsWith("77")) {
@@ -635,12 +818,15 @@ public class ClaimService {
             }
 
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
-                String subject = "Claim Approval Notification";        //"Life Insurance Claim - Approved";
-                String body = "Dear " + claimantFullName + ",\n\n"
-                        + "We are pleased to inform you that your claim [" + cin + "] has been reviewed and approved for the policy " + policyNumbers + ". The payment will be processed shortly and credited to the bank account number of nominee/s as per our internal procedures.\n\n"
-                        + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
-                        + "Best regards,\n"
-                        + "RICB";
+
+                String subject = "Claim Approval Notification";
+
+                String body =
+                        "Dear " + claimant.getFullName() + ",\n\n"
+                                + "We are pleased to inform you that your claim [" + claim.getCin() + "] has been reviewed and approved for the policy " + policyList + ". The payment will be processed shortly and credited to the bank account number of nominee/s as per our internal procedures.\n\n"
+                                + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                                + "Best regards,\n"
+                                + "RICB";
 
                 emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
             }
@@ -648,9 +834,8 @@ public class ClaimService {
         } catch (Exception e) {
             e.printStackTrace();
         }
-
-        return claim;
     }
+
 
     // ================= Track Records =================
     private final ClaimRepository claimRepository;
@@ -662,23 +847,43 @@ public class ClaimService {
     }
 
     public Map<String, Object> getClaimDetails(String cin) {
+
         ClaimEntity claim = claimRepository.findByCin(cin)
                 .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + cin));
 
         Map<String, Object> response = new HashMap<>();
+
         response.put("cin", claim.getCin());
         response.put("createdAt", claim.getCreatedAt());
         response.put("updatedAt", claim.getUpdatedAt());
         response.put("status", claim.getStatus());
         response.put("remarks", claim.getRemarks());
 
+        // ================= Policy Details =================
+        List<PolicyEntity> policies =
+                policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+
+        List<Map<String, Object>> policyList = new ArrayList<>();
+
+        for (PolicyEntity policy : policies) {
+            Map<String, Object> p = new HashMap<>();
+            p.put("policyNumber", policy.getPolicyNumber());
+            p.put("claimStatus", policy.getClaimStatus());
+            policyList.add(p);
+        }
+
+        response.put("policies", policyList);
+
+        // ================= Audit History =================
         List<Map<String, Object>> auditHistory = new ArrayList<>();
-        List<ClaimAuditEntity> audits = claimAuditRepository.findByCinOrderByActionedAtDesc(cin);
+        List<ClaimAuditEntity> audits =
+                claimAuditRepository.findByCinOrderByActionedAtDesc(cin);
 
         for (ClaimAuditEntity audit : audits) {
             Map<String, Object> auditMap = new HashMap<>();
             auditMap.put("actionedAt", audit.getActionedAt());
             auditMap.put("newStatus", audit.getNewStatus());
+            auditMap.put("remarks", audit.getRemarks()); // added here
             auditHistory.add(auditMap);
         }
 
@@ -749,14 +954,32 @@ public class ClaimService {
 
     // Branches
     public List<BranchDTO> getBranches() {
-        return branchRepo.findAll().stream()
-                .map(b -> {
-                    BranchDTO dto = new BranchDTO();
-                    dto.setId(b.getId());
-                    dto.setName(b.getName());
-                    return dto;
-                })
-                .collect(Collectors.toList());
+
+        List<BranchDTO> list = new ArrayList<>();
+
+        String sql = "SELECT branch_code, Branch_name " +
+                "FROM RICB_COM.TL_IN_MAS_BRANCH " +
+                "WHERE status_code = 'A' " +
+                "ORDER BY branch_code";
+
+        try (Connection conn = ConnectionManager.getLifeConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+
+                BranchDTO dto = new BranchDTO();
+                dto.setBranchCode(rs.getString("branch_code"));
+                dto.setBranchName(rs.getString("Branch_name"));
+
+                list.add(dto);
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("Error fetching branches: " + e.getMessage(), e);
+        }
+
+        return list;
     }
 
     /**
@@ -799,6 +1022,112 @@ public class ClaimService {
         return path.substring(path.lastIndexOf("/") + 1);
     }
 
+    // validateZipFile
+    private void validateZipFile(MultipartFile file) {
+
+        // ================= BASIC FILE VALIDATION =================
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("File is required");
+        }
+
+        // ✅ File size check (20MB)
+        long maxSizeBytes = 20L * 1024 * 1024;
+        if (file.getSize() > maxSizeBytes) {
+            throw new RuntimeException("File size exceeds 20 MB");
+        }
+
+        // ================= FILE NAME VALIDATION =================
+        String fileName = file.getOriginalFilename();
+
+        if (fileName == null || !fileName.toLowerCase().endsWith(".zip")) {
+            throw new RuntimeException("Invalid file extension. Only ZIP files are allowed.");
+        }
+
+        // ================= MIME TYPE VALIDATION =================
+        String contentType = file.getContentType();
+
+        if (contentType == null ||
+                (!contentType.equalsIgnoreCase("application/zip") &&
+                        !contentType.equalsIgnoreCase("application/x-zip-compressed"))) {
+
+            throw new RuntimeException("Invalid file type. Only ZIP files are allowed.");
+        }
+
+        // ================= ZIP CONTENT VALIDATION =================
+        try (ZipInputStream zis = new ZipInputStream(file.getInputStream())) {
+
+            ZipEntry entry;
+            int fileCount = 0;
+            long totalSize = 0;
+
+            List<String> allowedExtensions = Arrays.asList(
+                    ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"
+            );
+
+            while ((entry = zis.getNextEntry()) != null) {
+
+                String entryName = entry.getName().toLowerCase();
+
+                // ❌ Prevent directory traversal attack
+                if (entryName.contains("..") || entryName.startsWith("/")) {
+                    throw new RuntimeException("Invalid file path inside ZIP");
+                }
+
+                // Skip directories
+                if (entry.isDirectory()) {
+                    continue;
+                }
+
+                fileCount++;
+
+                // ❌ Limit number of files
+                if (fileCount > 20) {
+                    throw new RuntimeException("Too many files inside ZIP (max 20 allowed)");
+                }
+
+                // ❌ Validate file extension inside ZIP
+                boolean valid = allowedExtensions.stream()
+                        .anyMatch(entryName::endsWith);
+
+                if (!valid) {
+                    throw new RuntimeException("Invalid file type inside ZIP: " + entryName);
+                }
+
+                // ❌ Block nested ZIP files
+                if (entryName.endsWith(".zip")) {
+                    throw new RuntimeException("Nested ZIP files are not allowed");
+                }
+
+                // ❌ Prevent ZIP bomb attack
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                long entrySize = 0;
+
+                while ((bytesRead = zis.read(buffer)) != -1) {
+                    entrySize += bytesRead;
+                    totalSize += bytesRead;
+
+                    // Max 10MB per file
+                    if (entrySize > 10 * 1024 * 1024) {
+                        throw new RuntimeException("File inside ZIP too large");
+                    }
+
+                    // Max 100MB total extracted content
+                    if (totalSize > 100 * 1024 * 1024) {
+                        throw new RuntimeException("ZIP content too large");
+                    }
+                }
+            }
+
+            if (fileCount == 0) {
+                throw new RuntimeException("ZIP file is empty");
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid ZIP file: " + e.getMessage(), e);
+        }
+    }
+
     // ================= Update Claim Document =================
     public void updateClaimDocumentByCin(String cin, MultipartFile file) throws Exception {
 
@@ -817,6 +1146,9 @@ public class ClaimService {
         if (file.getSize() > maxSize) {
             throw new RuntimeException("File size must be less than 20MB");
         }
+
+        // ✅ ADD THIS LINE ONLY
+        validateZipFile(file);
 
         // ================= 2️⃣ Get Claim =================
         ClaimEntity claim = claimRepo.findByCin(cin)
