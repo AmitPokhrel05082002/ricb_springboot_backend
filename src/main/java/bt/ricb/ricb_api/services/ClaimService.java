@@ -318,20 +318,25 @@ public class ClaimService {
                     );
 
             // ================= Policy =================
-            List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
+            List<PolicyEntity> policies =
+                    Optional.ofNullable(policyRepo.findByPolicyHolderId(claim.getPolicyHolderId()))
+                            .orElse(Collections.emptyList());
 
-            if (policies.isEmpty()) {
-                throw new RuntimeException("Policy not found for PolicyHolderId: " + claim.getPolicyHolderId());
+            String policyHolderName;
+
+            if (!policies.isEmpty()) {
+                // ✅ Take first policy
+                policyHolderName = policies.get(0).getPolicyHolderName();
+            } else {
+                // ✅ FIX: Instead of throwing error → fallback
+                policyHolderName = "N/A";
             }
-
-            // Since one policy holder can have multiple policies but same name → take first
-            String policyHolderName = policies.get(0).getPolicyHolderName();
 
             // ================= DTO Mapping =================
             ClaimSummaryDTO summary = new ClaimSummaryDTO();
             summary.setCin(claim.getCin());
             summary.setClaimantName(claimant.getFullName());
-            summary.setPolicyHolderName(policyHolderName); // ✅ added
+            summary.setPolicyHolderName(policyHolderName);
             summary.setSubmittedDate(claim.getUpdatedAt());
             summary.setStatus(claim.getStatus());
             summary.setRemarks(claim.getRemarks());
@@ -399,6 +404,8 @@ public class ClaimService {
             policyDTO.setClaimStatus(policy.getClaimStatus());
             policyDTOList.add(policyDTO);
         }
+
+
 
         // Build ClaimDTO
         ClaimDTO claimDTO = new ClaimDTO();
@@ -566,16 +573,13 @@ public class ClaimService {
 
     // ================= Reject Claim =================
     @Transactional
-    public void rejectPolicies(ClaimActionDTO dto) {
+    public void rejectPolicies(ClaimActionDTO dto, MultipartFile file) {
 
         ClaimEntity claim = claimRepo.findByCin(dto.getCin())
                 .orElseThrow(() -> new RuntimeException("Claim not found for CIN: " + dto.getCin()));
 
-        String previousStatus = claim.getStatus(); // keep claim status unchanged (Pending)
-
         List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
 
-        // filter selected policies
         List<PolicyEntity> selectedPolicies = policies.stream()
                 .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
                 .toList();
@@ -591,14 +595,13 @@ public class ClaimService {
 
         for (PolicyEntity policy : selectedPolicies) {
 
-            // ================= POLICY UPDATE =================
             policy.setClaimStatus("Rejected");
             policy.setRemarks(dto.getRemarks());
             policy.setUpdatedAt(LocalDateTime.now());
 
             rejectedPolicyNumbers.add(policy.getPolicyNumber());
 
-            // ================= CLAIM ACTION =================
+            // ACTION
             ClaimActionEntity action = new ClaimActionEntity();
             action.setClaimId(claim.getId());
             action.setPolicyNumber(policy.getPolicyNumber());
@@ -608,12 +611,12 @@ public class ClaimService {
             action.setActionedAt(LocalDateTime.now());
             claimActionsRepo.save(action);
 
-            // ================= CLAIM AUDIT =================
+            // AUDIT
             ClaimAuditEntity audit = new ClaimAuditEntity();
             audit.setClaimId(claim.getId());
             audit.setCin(claim.getCin());
             audit.setPolicyNumber(policy.getPolicyNumber());
-            audit.setPreviousStatus("Pending"); // FIXED (not IN_PROGRESS)
+            audit.setPreviousStatus("Pending");
             audit.setNewStatus("Rejected");
             audit.setRemarks(dto.getRemarks());
             audit.setActionedBy(dto.getActionedBy());
@@ -623,51 +626,56 @@ public class ClaimService {
 
         policyRepo.saveAll(selectedPolicies);
 
-        // ================= CLAIM STATUS (STAYS PENDING) =================
         claim.setStatus("Pending");
         claim.setRemarks(dto.getRemarks());
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);
 
-        // ================= SMS + EMAIL (ONLY REJECTED POLICIES) =================
+        // ================= SMS + EMAIL =================
         try {
 
             String policyList = String.join(", ", rejectedPolicyNumbers);
 
-            String mobile = claimant.getMobileNumber();
-            if (mobile != null && !mobile.isBlank()) {
+            // SMS
+            if (claimant.getMobileNumber() != null && !claimant.getMobileNumber().isBlank()) {
 
                 String smsMessage =
                         "Your life insurance claim with CIN: " + claim.getCin() +
                                 " for the policy no. " + policyList +
                                 " has been found ineligible. Please visit My Business Profile for further details.";
 
-                if (mobile.startsWith("17")) {
-                    apiService.sendSms(smsMessage, mobile);
-                } else if (mobile.startsWith("77")) {
-                    apiService.sendSmsTcell(smsMessage, mobile);
+                if (claimant.getMobileNumber().startsWith("17")) {
+                    apiService.sendSms(smsMessage, claimant.getMobileNumber());
+                } else if (claimant.getMobileNumber().startsWith("77")) {
+                    apiService.sendSmsTcell(smsMessage, claimant.getMobileNumber());
                 }
             }
 
+            // EMAIL WITH ATTACHMENT
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
 
                 String subject = "Life Insurance Claim - Rejected";
 
                 String body =
-                        "Dear " + claimant.getFullName() + ",\n\n" +
-                                "Thank you for submitting your claim.\n\n" +
-                                "This is to inform you that after careful review and examination of the claim against the policy number " +
+                        "Dear " + claimant.getFullName() + ",\n\n"
+                                + "Thank you for submitting your claim.\n\n"
+                                + "This is to inform you that after careful review and examination of the claim against the policy number " +
                                 policyList +
-                                ", the claim has been found ineligible as per the policy terms and conditions. Therefore, we regret to inform you that the claim has been declined.\n\n" +
-                                "Kindly access your “My Business Profile” on the RICB website for detail report.\n\n" +
-                                "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n" +
-                                "Thank you for your understanding.";
+                                ", the claim has been found ineligible as per the policy terms and conditions. Therefore, we regret to inform you that the claim has been declined.\n\n"
+                                + "Kindly access your “My Business Profile” on the RICB website for detailed report.\n\n"
+                                + "Should you require any further clarifications, please feel free to contact us at our toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                                + "Thank you for your understanding.";
 
-                emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
+                emailService.sendEmail(
+                        claimant.getEmailAddress(),
+                        subject,
+                        body,
+                        file // 👈 attachment
+                );
             }
 
         } catch (Exception e) {
-            e.printStackTrace(); // don’t break transaction due to notification failure
+            e.printStackTrace();
         }
     }
 
@@ -734,16 +742,13 @@ public class ClaimService {
 
     // ================= Approve Claim =================
     @Transactional
-    public void approvePolicies(ClaimActionDTO dto) {
+    public void approvePolicies(ClaimActionDTO dto, MultipartFile file) {
 
         ClaimEntity claim = claimRepo.findByCin(dto.getCin())
                 .orElseThrow(() -> new RuntimeException("Claim not found for CIN: " + dto.getCin()));
 
-        String previousStatus = claim.getStatus(); // usually Pending
-
         List<PolicyEntity> policies = policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
 
-        // filter selected policies
         List<PolicyEntity> selectedPolicies = policies.stream()
                 .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
                 .toList();
@@ -759,14 +764,13 @@ public class ClaimService {
 
         for (PolicyEntity policy : selectedPolicies) {
 
-            // ================= POLICY UPDATE =================
             policy.setClaimStatus("Approved");
             policy.setRemarks(dto.getRemarks());
             policy.setUpdatedAt(LocalDateTime.now());
 
             approvedPolicyNumbers.add(policy.getPolicyNumber());
 
-            // ================= CLAIM ACTION =================
+            // ACTION
             ClaimActionEntity action = new ClaimActionEntity();
             action.setClaimId(claim.getId());
             action.setPolicyNumber(policy.getPolicyNumber());
@@ -776,7 +780,7 @@ public class ClaimService {
             action.setActionedAt(LocalDateTime.now());
             claimActionsRepo.save(action);
 
-            // ================= CLAIM AUDIT =================
+            // AUDIT
             ClaimAuditEntity audit = new ClaimAuditEntity();
             audit.setClaimId(claim.getId());
             audit.setCin(claim.getCin());
@@ -791,44 +795,49 @@ public class ClaimService {
 
         policyRepo.saveAll(selectedPolicies);
 
-        // ================= CLAIM STATUS (STAYS PENDING / OR COMPLETED IF YOU WANT LATER) =================
         claim.setStatus("Pending");
         claim.setRemarks(dto.getRemarks());
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);
 
-        // ================= SMS + EMAIL (ONLY APPROVED POLICIES) =================
+        // ================= SMS + EMAIL =================
         try {
 
             String policyList = String.join(", ", approvedPolicyNumbers);
 
-            String mobile = claimant.getMobileNumber();
-            if (mobile != null && !mobile.isBlank()) {
+            // SMS
+            if (claimant.getMobileNumber() != null && !claimant.getMobileNumber().isBlank()) {
 
                 String smsMessage =
                         "Your life insurance claim with CIN: " + claim.getCin() +
                                 " for the policy no. " + policyList +
-                                " is approved and the benefit amount will be deposited into the account of nominee(s).";
+                                " has been approved and the benefit amount will be deposited into the account of nominee(s).";
 
-                if (mobile.startsWith("17")) {
-                    apiService.sendSms(smsMessage, mobile);
-                } else if (mobile.startsWith("77")) {
-                    apiService.sendSmsTcell(smsMessage, mobile);
+                if (claimant.getMobileNumber().startsWith("17")) {
+                    apiService.sendSms(smsMessage, claimant.getMobileNumber());
+                } else if (claimant.getMobileNumber().startsWith("77")) {
+                    apiService.sendSmsTcell(smsMessage, claimant.getMobileNumber());
                 }
             }
 
+            // EMAIL WITH ATTACHMENT
             if (claimant.getEmailAddress() != null && !claimant.getEmailAddress().isBlank()) {
 
                 String subject = "Claim Approval Notification";
 
                 String body =
                         "Dear " + claimant.getFullName() + ",\n\n"
-                                + "We are pleased to inform you that your claim [" + claim.getCin() + "] has been reviewed and approved for the policy " + policyList + ". The payment will be processed shortly and credited to the bank account number of nominee/s as per our internal procedures.\n\n"
-                                + "Should you require any further clarifications, please feel free to contact us at out toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
+                                + "We are pleased to inform you that your claim [" + claim.getCin() + "] has been reviewed and approved for the policy " + policyList + ". The payment will be processed shortly and credited to the bank account of nominee(s) as per our internal procedures.\n\n"
+                                + "Should you require any further clarifications, please feel free to contact us at our toll-free number 1818 during office hours or drop a mail to contactus@ricb.bt.\n\n"
                                 + "Best regards,\n"
                                 + "RICB";
 
-                emailService.sendEmail(claimant.getEmailAddress(), subject, body, null);
+                emailService.sendEmail(
+                        claimant.getEmailAddress(),
+                        subject,
+                        body,
+                        file // 👈 attachment
+                );
             }
 
         } catch (Exception e) {
@@ -869,6 +878,8 @@ public class ClaimService {
             Map<String, Object> p = new HashMap<>();
             p.put("policyNumber", policy.getPolicyNumber());
             p.put("claimStatus", policy.getClaimStatus());
+            p.put("remarks", policy.getRemarks());
+
             policyList.add(p);
         }
 
@@ -882,6 +893,7 @@ public class ClaimService {
         for (ClaimAuditEntity audit : audits) {
             Map<String, Object> auditMap = new HashMap<>();
             auditMap.put("actionedAt", audit.getActionedAt());
+            auditMap.put("policyNumber", audit.getPolicyNumber());
             auditMap.put("newStatus", audit.getNewStatus());
             auditMap.put("remarks", audit.getRemarks()); // added here
             auditHistory.add(auditMap);

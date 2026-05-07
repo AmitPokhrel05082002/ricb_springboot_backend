@@ -18,6 +18,10 @@ import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -145,15 +149,12 @@ public class ClaimController {
 
     // ===== 2. Claim summaries for dashboard ===========
     @GetMapping("summaries")
-    public ResponseEntity<?> getAllClaimSummaries() {
+    public ResponseEntity<List<ClaimSummaryDTO>> getAllClaimSummaries() {
         try {
             List<ClaimSummaryDTO> summaries = claimService.getAllClaimSummaries();
             return ResponseEntity.ok(summaries);
-
-        } catch (Exception e) {
-            e.printStackTrace(); // 🔥 show real error in logs
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(e.getMessage());
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
@@ -318,8 +319,11 @@ public class ClaimController {
 //        }
 //    }
 
-    @PostMapping("/reject")
-    public ResponseEntity<?> rejectClaim(@RequestBody ClaimActionDTO dto) {
+    @PostMapping(value = "/reject", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> rejectClaim(
+            @RequestPart("data") String data,
+            @RequestPart(value = "file", required = false) MultipartFile file
+    ) {
 
         Connection conn = null;
         PreparedStatement insertStmt = null;
@@ -327,6 +331,10 @@ public class ClaimController {
         ResultSet rs = null;
 
         try {
+
+            // ✅ Convert JSON string → DTO
+            ObjectMapper mapper = new ObjectMapper();
+            ClaimActionDTO dto = mapper.readValue(data, ClaimActionDTO.class);
 
             // ================= VALIDATION =================
             if (dto.getPolicyNumbers() == null || dto.getPolicyNumbers().isEmpty()) {
@@ -342,7 +350,7 @@ public class ClaimController {
             ClaimDTO claim = fullClaim.getClaim();
             ClaimantDTO claimant = fullClaim.getClaimant();
 
-            // Filter selected policies
+            // FILTER SELECTED POLICIES
             List<PolicyDTO> policies = fullClaim.getPolicies().stream()
                     .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
                     .toList();
@@ -356,10 +364,6 @@ public class ClaimController {
 
             // ================= DB CONNECTION =================
             conn = ConnectionManager.getOracleConnectionforims();
-            if (conn == null) {
-                throw new RuntimeException("DB connection failed");
-            }
-
             conn.setAutoCommit(false);
 
             String insertQuery = """
@@ -400,9 +404,7 @@ public class ClaimController {
                 rs = seqStmt.executeQuery();
 
                 long serialNo = 0;
-                if (rs.next()) {
-                    serialNo = rs.getLong(1);
-                }
+                if (rs.next()) serialNo = rs.getLong(1);
 
                 serialNumbers.add(serialNo);
 
@@ -427,7 +429,7 @@ public class ClaimController {
                 insertStmt.setString(12, today);
                 insertStmt.setString(13, time);
 
-                insertStmt.setString(14, policy.getBranchCode());
+                insertStmt.setString(14, claim.getNearestBranchId());
                 insertStmt.setString(15, claim.getCauseOfDeath());
                 insertStmt.setString(16, policy.getPolicyHolderName());
 
@@ -439,8 +441,8 @@ public class ClaimController {
 
             conn.commit();
 
-            // ================= UPDATE LOCAL SYSTEM =================
-            claimService.rejectPolicies(dto);
+            // ✅ PASS FILE
+            claimService.rejectPolicies(dto, file);
 
             return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
@@ -450,9 +452,7 @@ public class ClaimController {
 
         } catch (Exception e) {
 
-            try {
-                if (conn != null) conn.rollback();
-            } catch (Exception ignored) {}
+            try { if (conn != null) conn.rollback(); } catch (Exception ignored) {}
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "status", "ERROR",
@@ -468,8 +468,11 @@ public class ClaimController {
         }
     }
 
-    @PostMapping("/approve")
-    public ResponseEntity<?> approveClaim(@RequestBody ClaimActionDTO dto) {
+    @PostMapping(value = "/approve", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> approveClaim(
+            @RequestPart("data") String data,
+            @RequestPart(value = "file", required = false) MultipartFile file
+    ) {
 
         Connection conn = null;
         PreparedStatement seqStmt = null;
@@ -477,6 +480,10 @@ public class ClaimController {
         ResultSet rs = null;
 
         try {
+
+            // ✅ Convert JSON string → DTO (FIX FOR 415)
+            ObjectMapper mapper = new ObjectMapper();
+            ClaimActionDTO dto = mapper.readValue(data, ClaimActionDTO.class);
 
             // ================= VALIDATION =================
             if (dto.getPolicyNumbers() == null || dto.getPolicyNumbers().isEmpty()) {
@@ -492,7 +499,6 @@ public class ClaimController {
             ClaimDTO claim = fullClaim.getClaim();
             ClaimantDTO claimant = fullClaim.getClaimant();
 
-            // ✅ FILTER ONLY SELECTED POLICIES
             List<PolicyDTO> policies = fullClaim.getPolicies().stream()
                     .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
                     .toList();
@@ -536,7 +542,7 @@ public class ClaimController {
             String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
             String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
 
-            // ================= LOOP SELECTED POLICIES ONLY =================
+            // ================= LOOP =================
             for (PolicyDTO policy : policies) {
 
                 seqStmt = conn.prepareStatement(
@@ -571,7 +577,7 @@ public class ClaimController {
                 insertStmt.setString(12, today);
                 insertStmt.setString(13, time);
 
-                insertStmt.setString(14, policy.getBranchCode());
+                insertStmt.setString(14, claim.getNearestBranchId());
                 insertStmt.setString(15, claim.getCauseOfDeath());
                 insertStmt.setString(16, policy.getPolicyHolderName());
 
@@ -583,8 +589,8 @@ public class ClaimController {
 
             conn.commit();
 
-            // ================= LOCAL DB UPDATE =================
-            claimService.approvePolicies(dto);
+            // ✅ PASS FILE TO SERVICE
+            claimService.approvePolicies(dto, file);
 
             return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
@@ -851,6 +857,109 @@ public class ClaimController {
             jsonArray.put(obj);
         }
         return jsonArray;
+    }
+
+    @PostMapping("/getRuralLifePolicies")
+    public ResponseEntity<?> getRuralLifePolicies(@RequestParam("cid") String cid) {
+
+        if (cid == null || cid.trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Collections.singletonMap("error", "cid parameter is required"));
+        }
+
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+
+        try {
+            // ✅ Step 1: Call GovTech API
+            // ✅ Step 1: Call GovTech API
+            String apiUrl = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + cid.trim();
+
+            URL url = new URL(apiUrl);
+            HttpURLConnection connHttp = (HttpURLConnection) url.openConnection();
+            connHttp.setRequestMethod("GET");
+            connHttp.setConnectTimeout(10000);
+            connHttp.setReadTimeout(10000);
+
+            int status = connHttp.getResponseCode();
+
+            if (status != 200) {
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body(Collections.singletonMap("error", "Failed to fetch data from GovTech API"));
+            }
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(connHttp.getInputStream())
+            );
+
+            StringBuilder response = new StringBuilder();
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+
+            reader.close();
+
+            JSONObject jsonResponse = new JSONObject(response.toString());
+
+            JSONArray memberArray = jsonResponse
+                    .getJSONObject("eligibleMemberCountDetails")
+                    .getJSONArray("eligibleMemberCountDetail");
+
+            if (memberArray.length() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message", "No household data found"));
+            }
+
+            // ✅ Step 2: Extract Household Number
+            String householdNo = memberArray.getJSONObject(0)
+                    .getString("Household_number");
+
+            // ✅ Step 3: Query DB
+            conn = ConnectionManager.getOracleConnectionforims();
+
+            String query = "SELECT POLICY_NO FROM TL_LI_TR_RURAL_POL_HDR " +
+                    "WHERE PRESENT_HOUSEHOLD_NO = ? " +
+                    "AND STATUS_CODE = 'D' " +
+                    "AND UNDERWRITING_YEAR = TO_CHAR(SYSDATE,'yyyy')";
+
+            pst = conn.prepareStatement(query);
+            pst.setString(1, householdNo);
+
+            rs = pst.executeQuery();
+
+            JSONArray policyArray = new JSONArray();
+
+            while (rs.next()) {
+                JSONObject obj = new JSONObject();
+                obj.put("POLICY_NO", rs.getString("POLICY_NO"));
+                obj.put("HOUSEHOLD_NO", householdNo);
+                policyArray.put(obj);
+            }
+
+            if (policyArray.length() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("message", "No RLI policies found"));
+            }
+
+            // ✅ Final Response
+            return ResponseEntity.ok(policyArray.toString());
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Server error"));
+        } finally {
+            try {
+                if (rs != null) rs.close();
+                if (pst != null) pst.close();
+                if (conn != null) conn.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     @PostMapping("/getGroupPolicyDetails")
