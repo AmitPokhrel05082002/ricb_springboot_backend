@@ -30,7 +30,7 @@ public class ClaimAuditEntity {
     private String remarks;
 
     @Column(name = "actioned_by")
-    private Integer actionedBy;
+    private String actionedBy;
 
     @Column(name = "actioned_at")
     private LocalDateTime actionedAt;
@@ -57,8 +57,8 @@ public class ClaimAuditEntity {
     public String getRemarks() { return remarks; }
     public void setRemarks(String remarks) { this.remarks = remarks; }
 
-    public Integer getActionedBy() { return actionedBy; }
-    public void setActionedBy(Integer actionedBy) { this.actionedBy = actionedBy; }
+    public String getActionedBy() { return actionedBy; }
+    public void setActionedBy(String actionedBy) { this.actionedBy = actionedBy; }
 
     public LocalDateTime getActionedAt() { return actionedAt; }
     public void setActionedAt(LocalDateTime actionedAt) { this.actionedAt = actionedAt; }

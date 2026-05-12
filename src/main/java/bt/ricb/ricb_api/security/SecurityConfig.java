@@ -18,36 +18,61 @@ public class SecurityConfig {
         this.jwtFilter = jwtFilter;
     }
 
-
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
         http
+                .cors(cors->{})
+                // Disable CSRF
                 .csrf(csrf -> csrf.disable())
+
+                // Stateless session for JWT
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
+
+                // Authorization rules
                 .authorizeHttpRequests(auth -> auth
 
+                        // ================= SWAGGER =================
                         .requestMatchers(
                                 "/swagger-ui/**",
-                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**"
+                        ).permitAll()
+
+                        // ================= AUTH APIs =================
+                        .requestMatchers(
                                 "/claims/auth/login",
                                 "/claims/auth/forgot-password",
                                 "/claims/auth/reset-password"
                         ).permitAll()
 
+                        // ================= PROTECTED APIs =================
+                        .requestMatchers(
+                                "/claims/status-counts",
+                                "/claims/summaries",
+                                "/claims/resubmit",
+                                "/claims/complete",
+                                "/claims/reject",
+                                "/claims/approve"
+                        ).authenticated()
+
+                        // ================= ADMIN ONLY =================
                         .requestMatchers(
                                 "/claims/auth/create-user",
                                 "/claims/auth/users",
-                                "/claims/auth/users/**",
+                                "/claims/auth/user/**",
+                                "/claims/auth/update-user/**",
                                 "/claims/auth/user-status/**"
-                        ).permitAll()
+                        ).hasRole("ADMIN")
 
-                        .anyRequest().authenticated()
+                        // ================= ALL OTHER APIs =================
+                        .anyRequest().permitAll()
                 )
-                .addFilterBefore(jwtFilter,
-                        UsernamePasswordAuthenticationFilter.class);
+
+                // Add JWT filter
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

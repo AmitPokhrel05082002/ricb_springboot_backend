@@ -7,6 +7,9 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.License;
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
 
 import java.util.Collections;
 
@@ -22,9 +25,15 @@ public class SwaggerConfig {
                 .info(new Info()
                         .title("RICB API Documentation")
                         .version("1.0.0")
-                        .description("Comprehensive API documentation for RICB Backend")
-                        .contact(new Contact().name("RICB Support Team").email("support@ricb.bt"))
-                        .license(new License().name("Apache 2.0").url("https://www.apache.org/licenses/LICENSE-2.0.html")));
+                        .description("Comprehensive API documentation for RICB Backend"))
+                .components(new Components()
+                        .addSecuritySchemes("bearerAuth",
+                                new SecurityScheme()
+                                        .type(SecurityScheme.Type.HTTP)
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")
+                        ))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
     }
 
     // --- All /api/** group (general) ---
@@ -86,7 +95,7 @@ public class SwaggerConfig {
         return GroupedOpenApi.builder()
                 .group("Business")
                 .displayName("Business Endpoints")
-                .pathsToMatch("/ricb-business/**")
+                .pathsToMatch("/business/**")
                 .addOperationCustomizer((
                         operation,handlerMethod) -> { operation.setTags(Collections.singletonList("Business"));
                     return operation; })

@@ -11,13 +11,18 @@ import java.util.Date;
 @Service
 public class JwtService {
 
-    // 🔥 MUST be constant (same every restart)
+    // MUST remain constant
     private static final String SECRET =
             "my-super-secret-key-my-super-secret-key-123456";
 
     private final Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
 
-    public String generateToken(String userId, String username, String role, String branchId) {
+    public String generateToken(
+            String userId,
+            String username,
+            String role,
+            String branchId
+    ) {
 
         return Jwts.builder()
                 .setSubject(username)
@@ -30,9 +35,9 @@ public class JwtService {
                 .compact();
     }
 
-    // ===== EXTRACT DATA =====
-
+    // ===== Extract Username =====
     public String extractUsername(String token) {
+
         return Jwts.parserBuilder()
                 .setSigningKey(key)
                 .build()
@@ -41,7 +46,9 @@ public class JwtService {
                 .getSubject();
     }
 
+    // ===== Extract Role =====
     public String extractRole(String token) {
+
         return (String) Jwts.parserBuilder()
                 .setSigningKey(key)
                 .build()
@@ -50,14 +57,20 @@ public class JwtService {
                 .get("role");
     }
 
+    // ===== Validate Token =====
     public boolean isValid(String token) {
+
         try {
+
             Jwts.parserBuilder()
                     .setSigningKey(key)
                     .build()
                     .parseClaimsJws(token);
+
             return true;
+
         } catch (Exception e) {
+
             return false;
         }
     }
