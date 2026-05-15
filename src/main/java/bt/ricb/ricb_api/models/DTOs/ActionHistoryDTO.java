@@ -6,14 +6,10 @@ public class ActionHistoryDTO {
 
     private String actionType;
     private String policyNumber;
-
-    // REMOVE actionedBy
-    // private String actionedBy;
-
-    // ADD THESE
     private String fullName;
     private String username;
     private String branchId;
+    private String remarks;
 
     private LocalDateTime actionedAt;
 
@@ -59,11 +55,18 @@ public class ActionHistoryDTO {
         this.branchId = branchId;
     }
 
+    public String getRemarks() {
+        return remarks;
+    }
+
+    public void setRemarks(String remarks) {
+        this.remarks = remarks;
+    }
+
     public LocalDateTime getActionedAt() {
         return actionedAt;
     }
 
     public void setActionedAt(LocalDateTime actionedAt) {
-        this.actionedAt = actionedAt;
-    }
+        this.actionedAt = actionedAt; }
 }

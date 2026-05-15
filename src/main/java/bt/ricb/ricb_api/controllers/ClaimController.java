@@ -28,6 +28,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.sql.*;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -561,11 +562,6 @@ public class ClaimController {
         return claimService.downloadSingleDocument(documentId);
     }
 
-    @GetMapping("/download/{cin}")
-    public ResponseEntity<ByteArrayResource> downloadClaim(@PathVariable String cin) {
-        return claimService.downloadClaimFileByCin(cin);
-    }
-
     @PostMapping(value = "/update-document/{cin}", consumes = "multipart/form-data")
     public ResponseEntity<String> updateClaimDocument(
             @PathVariable String cin,
@@ -668,12 +664,12 @@ public class ClaimController {
             // ✅ If no new policies
             if (resultArray.length() == 0 && !existingPolicies.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(Collections.singletonMap("message", "All policies already exist"));
+                        .body(Collections.singletonMap("message", "Claim has already been processed for the provided details. Contact 1818 for clarification."));
             }
 
             if (resultArray.length() == 0) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Collections.singletonMap("message", "No policies found"));
+                        .body(Collections.singletonMap("message", "Claimable policies were not found for the provided details."));
             }
 
             // ✅ Return SAME structure as Oracle
@@ -714,7 +710,9 @@ public class ClaimController {
     }
 
     @PostMapping("/getRuralLifePolicies")
-    public ResponseEntity<?> getRuralLifePolicies(@RequestParam("cid") String cid) {
+    public ResponseEntity<?> getRuralLifePoliciesNew(
+            @RequestParam("cid") String cid,
+            @RequestParam(value = "dod", required = false) String dod) {
 
         if (cid == null || cid.trim().isEmpty()) {
             return ResponseEntity.badRequest()
@@ -727,9 +725,29 @@ public class ClaimController {
 
         try {
 
-            // =====================================================
-            // 1. GOVTECH API CALL
-            // =====================================================
+            Date dateOfDeath = null;
+            Integer dodYear = null;
+
+            SimpleDateFormat inputDateFormat = new SimpleDateFormat("dd-MM-yyyy");
+            SimpleDateFormat dbDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+
+            if (dod != null && !dod.trim().isEmpty()) {
+                try {
+                    dateOfDeath = inputDateFormat.parse(dod.trim());
+
+                    Calendar cal = Calendar.getInstance();
+                    cal.setTime(dateOfDeath);
+                    dodYear = cal.get(Calendar.YEAR);
+
+                } catch (ParseException e) {
+                    return ResponseEntity.badRequest()
+                            .body(Collections.singletonMap(
+                                    "error",
+                                    "Invalid DOD format. Use dd-MM-yyyy"
+                            ));
+                }
+            }
+
             String apiUrl = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + cid.trim();
 
             HttpURLConnection connHttp = (HttpURLConnection) new URL(apiUrl).openConnection();
@@ -739,22 +757,22 @@ public class ClaimController {
 
             if (connHttp.getResponseCode() != 200) {
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                        .body(Collections.singletonMap("error", "Failed to fetch data from GovTech API"));
+                        .body(Collections.singletonMap("error", "Failed to fetch GovTech data"));
             }
 
             BufferedReader reader = new BufferedReader(
                     new InputStreamReader(connHttp.getInputStream())
             );
 
-            StringBuilder response = new StringBuilder();
+            StringBuilder responseBuilder = new StringBuilder();
             String line;
 
             while ((line = reader.readLine()) != null) {
-                response.append(line);
+                responseBuilder.append(line);
             }
             reader.close();
 
-            JSONObject jsonResponse = new JSONObject(response.toString());
+            JSONObject jsonResponse = new JSONObject(responseBuilder.toString());
 
             JSONArray memberArray = jsonResponse
                     .getJSONObject("eligibleMemberCountDetails")
@@ -765,9 +783,6 @@ public class ClaimController {
                         .body(Collections.singletonMap("message", "No household data found"));
             }
 
-            // =====================================================
-            // 2. EXTRACT VALUES
-            // =====================================================
             JSONObject member = memberArray.getJSONObject(0);
 
             String householdNo = member.optString("Household_number", null);
@@ -776,25 +791,18 @@ public class ClaimController {
 
             String finalHouseholdNo = householdNo;
 
-            // =====================================================
-            // 3. GET EFFECTIVE DATE
-            // =====================================================
             Date effectiveDate = configRepository.findAll()
                     .stream()
                     .findFirst()
                     .map(RliCollectionDateEntity::getEffectiveDate)
                     .orElse(null);
 
-            // =====================================================
-            // 4. VALIDATION RULE
-            // =====================================================
             if (censusTransferDateStr != null
                     && !censusTransferDateStr.equalsIgnoreCase("null")
                     && !censusTransferDateStr.trim().isEmpty()
                     && effectiveDate != null) {
 
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-                Date censusTransferDate = sdf.parse(censusTransferDateStr);
+                Date censusTransferDate = dbDateFormat.parse(censusTransferDateStr);
 
                 if (effectiveDate.before(censusTransferDate)) {
                     if (previousHHNo != null && !previousHHNo.trim().isEmpty()) {
@@ -803,55 +811,106 @@ public class ClaimController {
                 }
             }
 
-            // =====================================================
-            // 5. DB QUERY (MULTIPLE ROWS EXPECTED)
-            // =====================================================
             conn = ConnectionManager.getOracleConnectionforims();
 
-            String query =
-                    "SELECT POLICY_NO, POLICY_START_DATE, BRANCH_CODE " +
+            StringBuilder queryBuilder = new StringBuilder(
+                    "SELECT POLICY_NO, POLICY_START_DATE, BRANCH_CODE, COLLECTION_DATE " +
                             "FROM TL_LI_TR_RURAL_POL_HDR " +
                             "WHERE PRESENT_HOUSEHOLD_NO = ? " +
-                            "AND STATUS_CODE = 'D' " +
-                            "AND UNDERWRITING_YEAR = TO_CHAR(SYSDATE,'yyyy')";
+                            "AND STATUS_CODE = 'D' "
+            );
 
+            // ✅ ONLY DOD YEAR FILTER (THIS IS YOUR FIX)
+            if (dodYear != null) {
+                queryBuilder.append(" AND UNDERWRITING_YEAR = ? ");
+            }
+
+            String query = queryBuilder.toString();
             pst = conn.prepareStatement(query);
-            pst.setString(1, finalHouseholdNo);
+
+            int index = 1;
+
+            pst.setString(index++, finalHouseholdNo);
+
+            if (dodYear != null) {
+                pst.setString(index++, String.valueOf(dodYear));
+            }
 
             rs = pst.executeQuery();
 
+            List<Map<String, Object>> filteredPolicies = new ArrayList<>();
             List<Map<String, Object>> policyList = new ArrayList<>();
+            List<String> existingPolicies = new ArrayList<>();
 
             while (rs.next()) {
-                Map<String, Object> obj = new HashMap<>();
 
-                obj.put("POLICY_NO", rs.getString("POLICY_NO"));
-                obj.put("POLICY_START_DATE", rs.getString("POLICY_START_DATE"));
-                obj.put("BRANCH_CODE", rs.getString("BRANCH_CODE"));
-                obj.put("HOUSEHOLD_NO", finalHouseholdNo);
-                obj.put("SA", 30000);
-                obj.put("STATUS", "Active");
+                String policyNo = rs.getString("POLICY_NO");
+                String collectionDateStr = rs.getString("COLLECTION_DATE");
 
-                policyList.add(obj);
+                if (dateOfDeath != null && collectionDateStr != null) {
+                    try {
+                        Date collectionDate = dbDateFormat.parse(collectionDateStr);
+
+                        if (collectionDate.compareTo(dateOfDeath) >= 0) {
+                            continue;
+                        }
+                    } catch (ParseException e) {
+                        continue;
+                    }
+                }
+
+                Map<String, Object> policyObj = new HashMap<>();
+                policyObj.put("POLICY_NO", policyNo);
+                policyObj.put("POLICY_START_DATE", rs.getString("POLICY_START_DATE"));
+                policyObj.put("BRANCH_CODE", rs.getString("BRANCH_CODE"));
+                policyObj.put("HOUSEHOLD_NO", finalHouseholdNo);
+                policyObj.put("COLLECTION_DATE", collectionDateStr);
+                policyObj.put("SA", 30000);
+                policyObj.put("STATUS", "Active");
+
+                if (dateOfDeath != null) {
+                    policyObj.put("DOD", inputDateFormat.format(dateOfDeath));
+                }
+
+                filteredPolicies.add(policyObj);
             }
 
-            // =====================================================
-            // 6. EMPTY CHECK
-            // =====================================================
-            if (policyList.isEmpty()) {
+            for (Map<String, Object> policy : filteredPolicies) {
+                String policyNo = (String) policy.get("POLICY_NO");
+
+                if (policyRepository.existsByPolicyNumber(policyNo)) {
+                    existingPolicies.add(policyNo);
+                } else {
+                    policyList.add(policy);
+                }
+            }
+
+            if (filteredPolicies.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Collections.singletonMap("message", "No RLI policies found"));
+                        .body(Collections.singletonMap("message", "Claimable policies were not found for the provided details."));
             }
 
-            // =====================================================
-            // 7. RETURN CLEAN LIST (IMPORTANT FIX)
-            // =====================================================
+            if (policyList.isEmpty() && !existingPolicies.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Collections.singletonMap("message", "Claim has already been processed for the provided details. Contact 1818 for clarification."));
+            }
+
+            if (!policyList.isEmpty() && !existingPolicies.isEmpty()) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("message", "Partial success");
+                result.put("newPolicies", policyList);
+                result.put("existingPolicies", existingPolicies);
+                result.put("existingCount", existingPolicies.size());
+                return ResponseEntity.ok(result);
+            }
+
             return ResponseEntity.ok(policyList);
 
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Collections.singletonMap("error", "Server error"));
+                    .body(Collections.singletonMap("error", e.getMessage()));
+
         } finally {
             try {
                 if (rs != null) rs.close();
@@ -863,6 +922,7 @@ public class ClaimController {
         }
     }
 
+
     @PostMapping("/getGroupPolicyDetails")
     public ResponseEntity<?> getGroupPolicyDetails(@RequestParam("cid") String cid,
                                                    @RequestParam("orgCode") String orgCode) {
@@ -872,6 +932,7 @@ public class ClaimController {
         ResultSet policyRs = null;
 
         try {
+
             if (cid == null || cid.trim().isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Collections.singletonMap("error", "cid parameter is required"));
@@ -883,44 +944,90 @@ public class ClaimController {
             }
 
             conn = ConnectionManager.getOracleConnectionforims();
+
             if (conn == null) {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                         .body(Collections.singletonMap("error", "Database connection failed"));
             }
 
-            // Group Policy Query
             String policyQuery =
-                    "SELECT * FROM V_CLAIMS_GROUP_LI_POLICIES WHERE CID = ? AND ORG_CODE = ?";
+                    "SELECT * FROM V_CLAIMS_GROUP_LI_POLICIES " +
+                            "WHERE CID = ? AND ORG_CODE = ?";
 
             policyPst = conn.prepareStatement(policyQuery);
+
             policyPst.setString(1, cid.trim());
             policyPst.setString(2, orgCode.trim());
 
             policyRs = policyPst.executeQuery();
 
-            JSONArray jsonArray = convertResultSetToJson(policyRs);
+            JSONArray resultArray = new JSONArray();
+            List<String> existingPolicies = new ArrayList<>();
 
-            if (jsonArray.length() == 0) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            ResultSetMetaData metaData = policyRs.getMetaData();
+            int columnCount = metaData.getColumnCount();
+
+            while (policyRs.next()) {
+
+                String policyNo = policyRs.getString("POLICY_NO");
+
+
+                if (policyRepository.existsByPolicyNumber(policyNo)) {
+                    existingPolicies.add(policyNo);
+                    continue;
+                }
+
+                JSONObject obj = new JSONObject();
+
+                for (int i = 1; i <= columnCount; i++) {
+                    String columnName = metaData.getColumnName(i);
+                    Object value = policyRs.getObject(i);
+
+                    obj.put(columnName, value);
+                }
+
+                resultArray.put(obj);
+            }
+
+            if (resultArray.length() == 0 && !existingPolicies.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(Collections.singletonMap(
                                 "message",
-                                "No Group Policies found for the given CID and ORG_CODE"
+                                "Claim has already been processed for the provided details. Contact 1818 for clarification."
                         ));
             }
 
-            return ResponseEntity.ok(jsonArray.toString());
+            if (resultArray.length() == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap(
+                                "message",
+                                "Claimable policies were not found for the provided details."
+                        ));
+            }
+            return ResponseEntity.ok(resultArray.toString());
 
         } catch (SQLException e) {
+
             e.printStackTrace();
+
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Collections.singletonMap("error", "Database error occurred"));
+                    .body(Collections.singletonMap(
+                            "error",
+                            "Database error occurred"
+                    ));
 
         } catch (Exception e) {
+
             e.printStackTrace();
+
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Collections.singletonMap("error", "Server error occurred"));
+                    .body(Collections.singletonMap(
+                            "error",
+                            "Server error occurred"
+                    ));
 
         } finally {
+
             try {
                 if (policyRs != null) policyRs.close();
                 if (policyPst != null) policyPst.close();

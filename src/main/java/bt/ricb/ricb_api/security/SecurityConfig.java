@@ -65,7 +65,7 @@ public class SecurityConfig {
                                 "/claims/auth/user/**",
                                 "/claims/auth/update-user/**",
                                 "/claims/auth/user-status/**"
-                        ).hasRole("ADMIN")
+                        ).hasRole("IT_OFFICER")
 
                         // ================= ALL OTHER APIs =================
                         .anyRequest().permitAll()

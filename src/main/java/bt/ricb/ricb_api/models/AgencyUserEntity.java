@@ -43,7 +43,8 @@ public class AgencyUserEntity {
 
     public enum Role {
         ADMIN,
-        CLAIM_OFFICER
+        CLAIM_OFFICER,
+        IT_OFFICER
     }
 
     @PrePersist

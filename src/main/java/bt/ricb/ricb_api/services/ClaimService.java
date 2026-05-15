@@ -82,8 +82,9 @@ public class ClaimService {
 
         Map<String, Long> counts = new HashMap<>();
 
-        // ================= ADMIN =================
-        if (user.getRole() == AgencyUserEntity.Role.ADMIN) {
+        // ================= GLOBAL ACCESS =================
+        if (user.getRole() == AgencyUserEntity.Role.ADMIN
+                || user.getRole() == AgencyUserEntity.Role.IT_OFFICER) {
 
             counts.put("totalClaims", claimRepo.count());
             counts.put("pending", claimRepo.countByStatus("Pending"));
@@ -350,35 +351,28 @@ public class ClaimService {
 
         List<ClaimEntity> claims;
 
-        // ================= ADMIN =================
-        if (user.getRole() == AgencyUserEntity.Role.ADMIN) {
+        // ================= ADMIN OR IT OFFICER =================
+        if (user.getRole() == AgencyUserEntity.Role.ADMIN
+                || user.getRole() == AgencyUserEntity.Role.IT_OFFICER) {
 
             claims = claimRepo.findAll();
 
         } else {
 
             // ================= BRANCH USERS =================
-            claims = claimRepo.findByNearestBranchId(
-                    user.getBranchId()
-            );
+            claims = claimRepo.findByNearestBranchId(user.getBranchId());
         }
 
         return claims.stream().map(claim -> {
 
             ClaimantEntity claimant = claimantRepo.findById(claim.getClaimantId())
                     .orElseThrow(() ->
-                            new RuntimeException(
-                                    "Claimant not found for ID: "
-                                            + claim.getClaimantId()
-                            )
+                            new RuntimeException("Claimant not found for ID: " + claim.getClaimantId())
                     );
 
             List<PolicyEntity> policies =
-                    Optional.ofNullable(
-                            policyRepo.findByPolicyHolderId(
-                                    claim.getPolicyHolderId()
-                            )
-                    ).orElse(Collections.emptyList());
+                    Optional.ofNullable(policyRepo.findByPolicyHolderId(claim.getPolicyHolderId()))
+                            .orElse(Collections.emptyList());
 
             String policyHolderName =
                     !policies.isEmpty()
@@ -392,13 +386,16 @@ public class ClaimService {
             summary.setPolicyHolderName(policyHolderName);
             summary.setSubmittedDate(claim.getUpdatedAt());
             summary.setStatus(claim.getStatus());
+            summary.setClaimType(claim.getClaimType());
             summary.setRemarks(claim.getRemarks());
+            summary.setNearestBranchId(claim.getNearestBranchId());
             summary.setCreatedAt(claim.getCreatedAt());
 
             return summary;
 
         }).collect(Collectors.toList());
     }
+
 
     // ================= Full Claim Details =================
     public ClaimResponseDRO getFullClaimByCin(String cin) {
@@ -477,6 +474,7 @@ public class ClaimService {
             actionDTO.setActionType(action.getActionType().name());
             actionDTO.setPolicyNumber(action.getPolicyNumber());
             actionDTO.setActionedAt(action.getActionedAt());
+            actionDTO.setRemarks(action.getRemarks());
 
             // Fetch user details from agency_user table
             AgencyUserEntity user = agencyUserRepo
@@ -1127,129 +1125,6 @@ public class ClaimService {
 
         // already S3 key
         return filePath;
-    }
-
-
-    /**
-     * Download ALL documents for claim
-     */
-    public ResponseEntity<ByteArrayResource> downloadClaimFileByCin(String cin) {
-
-        // ================= CLAIM =================
-        ClaimEntity claim = claimRepo.findByCin(cin)
-                .orElseThrow(() ->
-                        new RuntimeException("Claim not found: " + cin));
-
-        // ================= FETCH ALL DOCS =================
-        List<ClaimDocumentsEntity> docs =
-                claimDocumentsRepo.findByClaimId(claim.getId());
-
-        if (docs == null || docs.isEmpty()) {
-            throw new RuntimeException(
-                    "No documents found for CIN: " + cin
-            );
-        }
-
-        System.out.println("TOTAL DOCS FOUND: " + docs.size());
-
-        try (
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                ZipOutputStream zos = new ZipOutputStream(baos)
-        ) {
-
-            Set<String> addedNames = new HashSet<>();
-
-            for (ClaimDocumentsEntity doc : docs) {
-
-                try {
-
-                    // ================= FILE PATH =================
-                    String filePath = doc.getZipFilePath();
-
-                    if (filePath == null || filePath.isBlank()) {
-                        continue;
-                    }
-
-                    System.out.println("FILE PATH: " + filePath);
-
-                    // ================= EXTRACT KEY =================
-                    String key = extractS3Key(filePath);
-
-                    System.out.println("S3 KEY: " + key);
-
-                    // ================= DOWNLOAD =================
-                    byte[] fileBytes = s3Service.downloadFile(key);
-
-                    if (fileBytes == null || fileBytes.length == 0) {
-
-                        System.out.println("EMPTY FILE: " + key);
-                        continue;
-                    }
-
-                    // ================= FILE NAME =================
-                    String fileName = extractFileName(filePath);
-
-                    // prevent duplicate filenames inside zip
-                    if (addedNames.contains(fileName)) {
-
-                        fileName =
-                                System.currentTimeMillis() + "_" + fileName;
-                    }
-
-                    addedNames.add(fileName);
-
-                    System.out.println("ADDING FILE: " + fileName);
-
-                    // ================= ZIP ENTRY =================
-                    ZipEntry zipEntry = new ZipEntry(fileName);
-
-                    zos.putNextEntry(zipEntry);
-                    zos.write(fileBytes);
-                    zos.closeEntry();
-
-                } catch (Exception ex) {
-
-                    ex.printStackTrace();
-
-                    System.out.println(
-                            "FAILED FILE: " + doc.getZipFilePath()
-                    );
-                }
-            }
-
-            zos.finish();
-
-            byte[] zipBytes = baos.toByteArray();
-
-            if (zipBytes.length == 0) {
-                throw new RuntimeException(
-                        "No valid files could be downloaded"
-                );
-            }
-
-            ByteArrayResource resource =
-                    new ByteArrayResource(zipBytes);
-
-            return ResponseEntity.ok()
-                    .header(
-                            HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"claim_" +
-                                    cin +
-                                    "_documents.zip\""
-                    )
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .contentLength(zipBytes.length)
-                    .body(resource);
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
-            throw new RuntimeException(
-                    "Error downloading claim documents: " + e.getMessage(),
-                    e
-            );
-        }
     }
 
 
