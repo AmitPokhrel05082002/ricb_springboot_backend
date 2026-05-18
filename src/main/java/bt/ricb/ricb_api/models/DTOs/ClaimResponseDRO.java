@@ -4,40 +4,93 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public class ClaimResponseDRO {
+
     private ClaimantDTO claimant;
     private PolicyHolderDTO policyHolder;
     private List<PolicyDTO> policies;
     private ClaimDTO claim;
     private PayeeDTO payee;
+
+    // ADD THIS
+    private List<ActionHistoryDTO> actionHistory;
+
     private String cin;
     private LocalDateTime createdAt;
     private String status;
 
+    // ================= Getters and Setters =================
 
+    public String getCin() {
+        return cin;
+    }
 
-    // Getters and Setters
-    public String getCin() { return cin; }
-    public void setCin(String cin) { this.cin = cin; }
+    public void setCin(String cin) {
+        this.cin = cin;
+    }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 
-    public ClaimantDTO getClaimant() { return claimant; }
-    public void setClaimant(ClaimantDTO claimant) { this.claimant = claimant; }
+    public String getStatus() {
+        return status;
+    }
 
-    public PayeeDTO getPayee() { return payee; }
-    public void setPayee(PayeeDTO payee) { this.payee = payee; }
+    public void setStatus(String status) {
+        this.status = status;
+    }
 
-    public PolicyHolderDTO getPolicyHolder() { return policyHolder; }
-    public void setPolicyHolder(PolicyHolderDTO policyHolder) { this.policyHolder = policyHolder; }
+    public ClaimantDTO getClaimant() {
+        return claimant;
+    }
 
-    public ClaimDTO getClaim() { return claim; }
-    public void setClaim(ClaimDTO claim) { this.claim = claim; }
+    public void setClaimant(ClaimantDTO claimant) {
+        this.claimant = claimant;
+    }
 
-    public List<PolicyDTO> getPolicies() { return policies; }
+    public PayeeDTO getPayee() {
+        return payee;
+    }
 
-    public void setPolicies(List<PolicyDTO> policies) { this.policies = policies; }
+    public void setPayee(PayeeDTO payee) {
+        this.payee = payee;
+    }
+
+    public PolicyHolderDTO getPolicyHolder() {
+        return policyHolder;
+    }
+
+    public void setPolicyHolder(PolicyHolderDTO policyHolder) {
+        this.policyHolder = policyHolder;
+    }
+
+    public ClaimDTO getClaim() {
+        return claim;
+    }
+
+    public void setClaim(ClaimDTO claim) {
+        this.claim = claim;
+    }
+
+    public List<PolicyDTO> getPolicies() {
+        return policies;
+    }
+
+    public void setPolicies(List<PolicyDTO> policies) {
+        this.policies = policies;
+    }
+
+    // ================= Action History =================
+
+    public List<ActionHistoryDTO> getActionHistory() {
+        return actionHistory;
+    }
+
+    public void setActionHistory(List<ActionHistoryDTO> actionHistory) {
+        this.actionHistory = actionHistory;
+    }
 }

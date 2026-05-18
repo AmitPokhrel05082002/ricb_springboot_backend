@@ -22,7 +22,7 @@ public class ClaimEntity {
     private Integer policyHolderId;
 
     @Column(name="nearest_branch_id", nullable = false)
-    private Integer nearestBranchId;
+    private String nearestBranchId;
 
     @Column(name="claim_type", nullable = false)
     private String claimType;
@@ -76,8 +76,8 @@ public class ClaimEntity {
     public Integer getPolicyHolderId() { return policyHolderId; }
     public void setPolicyHolderId(Integer policyHolderId) { this.policyHolderId = policyHolderId; }
 
-    public Integer getNearestBranchId() { return nearestBranchId; }
-    public void setNearestBranchId(Integer nearestBranchId) { this.nearestBranchId = nearestBranchId; }
+    public String getNearestBranchId() { return nearestBranchId; }
+    public void setNearestBranchId(String nearestBranchId) { this.nearestBranchId = nearestBranchId; }
 
     public String getClaimType() { return claimType; }
     public void setClaimType(String claimType) { this.claimType = claimType; }

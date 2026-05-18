@@ -2,7 +2,6 @@ package bt.ricb.ricb_api.models.DTOs;
 
 public class PayeeDTO {
 
-    private String sameAsClaimant; // 1 = Yes, 0 = No
     private String cid;
     private String accountHolderName;
     private Integer bankId;   // frontend provides name
@@ -10,10 +9,6 @@ public class PayeeDTO {
     private String mobileNumber;
 
     // Getters and Setters
-    public String getSameAsClaimant() { return sameAsClaimant; }
-    public void setSameAsClaimant(String sameAsClaimant) { this.sameAsClaimant = sameAsClaimant; }
-
-
     public String getCid() { return cid; }
     public void setCid(String cid) { this.cid = cid; }
 

@@ -14,20 +14,24 @@ public class ClaimActionEntity {
     @Column(name = "claim_id")
     private Integer claimId;
 
+    @Column(name = "policy_number")
+    private String policyNumber;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "action_type")
     private ActionType actionType;
 
     private String remarks;
 
+
     @Column(name = "actioned_by")
-    private Integer actionedBy;
+    private String actionedBy;
 
     @Column(name = "actioned_at")
     private LocalDateTime actionedAt;
 
     public enum ActionType {
-        Verified,
+        Completed,
         Approved,
         Rejected,
         Resubmitted
@@ -41,14 +45,17 @@ public class ClaimActionEntity {
     public Integer getClaimId() { return claimId; }
     public void setClaimId(Integer claimId) { this.claimId = claimId; }
 
+    public String getPolicyNumber() { return policyNumber; }
+    public void setPolicyNumber(String policyNumber) { this.policyNumber = policyNumber; }
+
     public ActionType getActionType() { return actionType; }
     public void setActionType(ActionType actionType) { this.actionType = actionType; }
 
     public String getRemarks() { return remarks; }
     public void setRemarks(String remarks) { this.remarks = remarks; }
 
-    public Integer getActionedBy() { return actionedBy; }
-    public void setActionedBy(Integer actionedBy) { this.actionedBy = actionedBy; }
+    public String getActionedBy() { return actionedBy; }
+    public void setActionedBy(String actionedBy) { this.actionedBy = actionedBy; }
 
     public LocalDateTime getActionedAt() { return actionedAt; }
     public void setActionedAt(LocalDateTime actionedAt) { this.actionedAt = actionedAt; }

@@ -40,8 +40,17 @@ public class PolicyEntity {
     @Column(name = "branch_code")
     private String branchCode;
 
+    @Column(name = "claim_status")
+    private String claimStatus;
+
+    @Column(name = "remarks")
+    private String remarks;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
     // ================= Getters and Setters =================
     public Integer getId() { return id; }
@@ -71,9 +80,18 @@ public class PolicyEntity {
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
 
+    public String getClaimStatus() { return claimStatus; }
+    public void setClaimStatus(String claimStatus) { this.claimStatus = claimStatus;  }
+
+    public String getRemarks() { return remarks; }
+    public void setRemarks(String remarks) { this.remarks = remarks; }
+
     public String getBranchCode() { return branchCode; }
     public void setBranchCode(String branchCode) { this.branchCode = branchCode; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }
