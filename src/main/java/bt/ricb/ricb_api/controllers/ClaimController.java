@@ -18,7 +18,9 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -291,25 +293,25 @@ public class ClaimController {
             conn.setAutoCommit(false);
 
             String insertQuery = """
-            INSERT INTO ricb_li.tl_li_tr_claims_header
-            ( serial_no, claim_type, policy_no, policy_serial_no,
-              claim_intm_date, claim_intm_by, claim_intm_relation,
-              date_of_death, place_of_death, who_was_died,
-              type_of_death, mode_of_intimation,
-              claim_regn_no, claim_regn_date, status_code,
-              prepared_by, prepared_on, prepared_time,
-              branch_code, risk_commencement,
-              cause_of_death, deceased_name )
-            VALUES
-            ( ?, ?, ?, ?,
-              TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
-              TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
-              ?, 'W', '',
-              TO_DATE(?, 'dd-mm-yyyy'), 'Z',
-              'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
-              ?, '',
-              ?, ? )
-        """;
+                        INSERT INTO ricb_li.tl_li_tr_claims_header
+                        ( serial_no, claim_type, policy_no, policy_serial_no,
+                          claim_intm_date, claim_intm_by, claim_intm_relation,
+                          date_of_death, place_of_death, who_was_died,
+                          type_of_death, mode_of_intimation,
+                          claim_regn_no, claim_regn_date, status_code,
+                          prepared_by, prepared_on, prepared_time,
+                          branch_code, risk_commencement,
+                          cause_of_death, deceased_name )
+                        VALUES
+                        ( ?, ?, ?, ?,
+                          TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
+                          TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
+                          ?, 'W', '',
+                          TO_DATE(?, 'dd-mm-yyyy'), 'Z',
+                          'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
+                          ?, '',
+                          ?, ? )
+                    """;
 
             insertStmt = conn.prepareStatement(insertQuery);
 
@@ -377,7 +379,8 @@ public class ClaimController {
 
             try {
                 if (conn != null) conn.rollback();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "status", "ERROR",
@@ -386,10 +389,22 @@ public class ClaimController {
 
         } finally {
 
-            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
-            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
-            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
-            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
+            try {
+                if (rs != null) rs.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (seqStmt != null) seqStmt.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (insertStmt != null) insertStmt.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (conn != null) conn.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -449,25 +464,25 @@ public class ClaimController {
 
             // ================= SQL (NO TO_DATE) =================
             String insertQuery = """
-            INSERT INTO ricb_li.tl_li_tr_claims_header
-            ( serial_no, claim_type, policy_no, policy_serial_no,
-              claim_intm_date, claim_intm_by, claim_intm_relation,
-              date_of_death, place_of_death, who_was_died,
-              type_of_death, mode_of_intimation,
-              claim_regn_no, claim_regn_date, status_code,
-              prepared_by, prepared_on, prepared_time,
-              branch_code, risk_commencement,
-              cause_of_death, deceased_name )
-            VALUES
-            ( ?, ?, ?, ?,
-              ?, ?, ?,
-              ?, ?, 'P',
-              ?, 'W', '',
-              ?, 'A',
-              'Web', ?, ?,
-              ?, '',
-              ?, ? )
-        """;
+                        INSERT INTO ricb_li.tl_li_tr_claims_header
+                        ( serial_no, claim_type, policy_no, policy_serial_no,
+                          claim_intm_date, claim_intm_by, claim_intm_relation,
+                          date_of_death, place_of_death, who_was_died,
+                          type_of_death, mode_of_intimation,
+                          claim_regn_no, claim_regn_date, status_code,
+                          prepared_by, prepared_on, prepared_time,
+                          branch_code, risk_commencement,
+                          cause_of_death, deceased_name )
+                        VALUES
+                        ( ?, ?, ?, ?,
+                          ?, ?, ?,
+                          ?, ?, 'P',
+                          ?, 'W', '',
+                          ?, 'A',
+                          'Web', ?, ?,
+                          ?, '',
+                          ?, ? )
+                    """;
 
             insertStmt = conn.prepareStatement(insertQuery);
 
@@ -530,7 +545,10 @@ public class ClaimController {
 
         } catch (Exception e) {
 
-            try { if (conn != null) conn.rollback(); } catch (Exception ignored) {}
+            try {
+                if (conn != null) conn.rollback();
+            } catch (Exception ignored) {
+            }
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "status", "ERROR",
@@ -539,10 +557,22 @@ public class ClaimController {
 
         } finally {
 
-            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
-            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
-            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
-            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
+            try {
+                if (rs != null) rs.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (seqStmt != null) seqStmt.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (insertStmt != null) insertStmt.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (conn != null) conn.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -814,7 +844,7 @@ public class ClaimController {
             conn = ConnectionManager.getOracleConnectionforims();
 
             StringBuilder queryBuilder = new StringBuilder(
-                    "SELECT POLICY_NO, POLICY_START_DATE, BRANCH_CODE, COLLECTION_DATE " +
+                    "SELECT SERIAL_NO,POLICY_NO, POLICY_START_DATE, BRANCH_CODE, COLLECTION_DATE " +
                             "FROM TL_LI_TR_RURAL_POL_HDR " +
                             "WHERE PRESENT_HOUSEHOLD_NO = ? " +
                             "AND STATUS_CODE = 'D' "
@@ -845,6 +875,7 @@ public class ClaimController {
             while (rs.next()) {
 
                 String policyNo = rs.getString("POLICY_NO");
+                String SERIAL_NO = rs.getString("SERIAL_NO");
                 String collectionDateStr = rs.getString("COLLECTION_DATE");
 
                 if (dateOfDeath != null && collectionDateStr != null) {
@@ -860,6 +891,7 @@ public class ClaimController {
                 }
 
                 Map<String, Object> policyObj = new HashMap<>();
+                policyObj.put("SERIAL_NO", SERIAL_NO);
                 policyObj.put("POLICY_NO", policyNo);
                 policyObj.put("POLICY_START_DATE", rs.getString("POLICY_START_DATE"));
                 policyObj.put("BRANCH_CODE", rs.getString("BRANCH_CODE"));
@@ -1035,6 +1067,209 @@ public class ClaimController {
             } catch (SQLException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    @PostMapping("/rural-claim")
+    public ResponseEntity<?> createRuralClaim(@RequestBody RuralClaimDTO dto) {
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+        PreparedStatement seqPs = null;
+        ResultSet rs = null;
+
+        try {
+
+            // ================= VALIDATION =================
+            if (dto.getCitizenId() == null || dto.getCitizenId().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "Citizen ID required"
+                ));
+            }
+
+            if (dto.getDateOfDeath() == null) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "Date of Death required"
+                ));
+            }
+
+            if (dto.getBranchCode() == null || dto.getBranchCode().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", "FAILED",
+                        "message", "Branch Code required"
+                ));
+            }
+
+            // ================= SYSTEM VALUES =================
+            String preparedBy = SecurityContextHolder.getContext().getAuthentication().getName();
+            LocalDate preparedOn = LocalDate.now();
+
+            String preparedTime = LocalTime.now()
+                    .format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+
+            // ================= API CALL =================
+            String url = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + dto.getCitizenId();
+
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
+
+            Map<String, Object> body = response.getBody();
+
+            Map<String, Object> details =
+                    (Map<String, Object>) body.get("eligibleMemberCountDetails");
+
+            List<Map<String, Object>> list =
+                    (List<Map<String, Object>>) details.get("eligibleMemberCountDetail");
+
+            Map<String, Object> data = list.get(0);
+
+            String householdNo = data.get("Household_number") != null
+                    ? data.get("Household_number").toString()
+                    : null;
+
+            String prevHouseholdNo = data.get("Previous_HH_No") != null
+                    ? data.get("Previous_HH_No").toString()
+                    : null;
+
+            java.sql.Date censusDate = null;
+
+            if (data.get("Census_Transfer_Date") != null) {
+                try {
+                    DateTimeFormatter formatter =
+                            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+                    LocalDateTime ldt =
+                            LocalDateTime.parse(data.get("Census_Transfer_Date").toString(), formatter);
+
+                    censusDate = java.sql.Date.valueOf(ldt.toLocalDate());
+                } catch (Exception e) {
+                    censusDate = null;
+                }
+            }
+
+            // ================= DB =================
+            conn = ConnectionManager.getOracleConnectionforims();
+            conn.setAutoCommit(false);
+
+            seqPs = conn.prepareStatement(
+                    "SELECT ricb_li.sq_li_tr_rural_2026_b01.nextval FROM dual"
+            );
+
+            rs = seqPs.executeQuery();
+            rs.next();
+            long serialNo = rs.getLong(1);
+
+            // ================= SQL =================
+            String sql = """
+            INSERT INTO ricb_li.TL_LI_TR_RURAL_2026_CLM
+            (
+                SERIAL_NO,
+                CITIZEN_ID,
+                HOUSEHOLD_NO,
+                PREV_HH_NO,
+                CENSUS_TRF_DATE,
+                DATE_OF_DEATH,
+                BRANCH_CODE,
+                PREPARED_BY,
+                PREPARED_ON,
+                PREPARED_TIME,
+                STATUS_CODE,
+                REMARKS,
+                POLICY_SERIAL_NO,
+                POLICY_NO,
+                DECEASED_NAME,
+                CAUSE_OF_DEATH,
+                DEATH_REPORTING_APPL_NO,
+                DEATH_PLACE,
+                DEATH_TYPE,
+                CLAIM_INTM_DATE,
+                CLAIM_INTM_BY,
+                CLAIM_INTM_RELATION,
+                MODE_OF_INTIMATION,
+                CLAIM_AMOUNT,
+                WHO_WAS_DIED
+            )
+            VALUES
+            (
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                'W',
+                30000,
+                'A'
+            )
+        """;
+
+            ps = conn.prepareStatement(sql);
+
+            // ================= MAPPING =================
+            ps.setLong(1, serialNo);
+            ps.setString(2, dto.getCitizenId());
+            ps.setString(3, householdNo);
+            ps.setString(4, prevHouseholdNo);
+            ps.setDate(5, censusDate);
+
+            ps.setDate(6, java.sql.Date.valueOf(dto.getDateOfDeath()));
+            ps.setString(7, dto.getBranchCode());
+
+            // SYSTEM FIELDS
+            ps.setString(8, preparedBy);
+            ps.setDate(9, java.sql.Date.valueOf(preparedOn));
+            ps.setString(10, preparedTime);
+
+            ps.setString(11, dto.getStatusCode());
+            ps.setString(12, "Web");
+
+            ps.setLong(13, dto.getPolicySerialNo());
+            ps.setString(14, dto.getPolicyNo());
+
+            ps.setString(15, dto.getDeceasedName());
+            ps.setString(16, dto.getCauseOfDeath());
+
+            ps.setString(17, dto.getDeathReportingApplNo());
+            ps.setString(18, dto.getDeathPlace());
+            ps.setString(19, dto.getDeathType());
+
+            if (dto.getClaimIntmDate() != null) {
+                ps.setDate(20, java.sql.Date.valueOf(dto.getClaimIntmDate()));
+            } else {
+                ps.setNull(20, Types.DATE);
+            }
+
+            ps.setString(21, dto.getClaimIntmBy());
+            ps.setString(22, dto.getClaimIntmRelation());
+
+            // ================= EXECUTE =================
+            ps.executeUpdate();
+            conn.commit();
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "SUCCESS",
+                    "message", "Rural claim inserted successfully",
+                    "serialNo", serialNo
+            ));
+
+        } catch (Exception e) {
+
+            try {
+                if (conn != null) conn.rollback();
+            } catch (Exception ignored) {}
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "status", "ERROR",
+                            "message", e.getMessage()
+                    ));
+
+        } finally {
+
+            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+            try { if (seqPs != null) seqPs.close(); } catch (Exception ignored) {}
+            try { if (ps != null) ps.close(); } catch (Exception ignored) {}
+            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
         }
     }
 }

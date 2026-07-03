@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class LifeInsuranceImpl implements LifeInsuranceDao {
 	public void lifeInsuranceMain(LifeInsuranceMainDto lifeInsuranceMainDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_MAIN@ricb_com (POLICY_SERIAL, ID, REQUEST_ID, CUSTOMER_CID, CUSTOMER_NAME, DEPARTMENT_CODE, AMOUNT_PAID, TRANSACTION_ID, TRANSACTION_DATE, REMITTER_NAME, REMITTER_BANK, REMITTER_MOBILE_NO, TRANSACTION_STATUS, DATA_SOURCE, AUTH_CODE, AUTH_ID, RESPONSE_CODE, UPDATED_DATE, REMARKS, REMMITER_ACCOUNT_NO, PROCESS_CORE, ERR_LOG) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_MAIN@ricb_com_ins (POLICY_SERIAL, ID, REQUEST_ID, CUSTOMER_CID, CUSTOMER_NAME, DEPARTMENT_CODE, AMOUNT_PAID, TRANSACTION_ID, TRANSACTION_DATE, REMITTER_NAME, REMITTER_BANK, REMITTER_MOBILE_NO, TRANSACTION_STATUS, DATA_SOURCE, AUTH_CODE, AUTH_ID, RESPONSE_CODE, UPDATED_DATE, REMARKS, REMMITER_ACCOUNT_NO, PROCESS_CORE, ERR_LOG) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;
@@ -54,7 +54,7 @@ public class LifeInsuranceImpl implements LifeInsuranceDao {
 	}
 
 	public void insertDiscLoadDetails(PolicyDiscountLoadDTO discLoadDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_DISC_LOAD@ricb_com (POLICY_SERIAL, DISC_LOAD_CODE, DISC_LOAD_TYPE, DISC_LOAD_DESC, RATE_PER_1000_SA, RATE_PCNT_ON_PREM, DOCTOR_BMHC_NO, MEDICAL_FEES_AMT, REIMB_PROPOSER_AMT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_DISC_LOAD@ricb_com_ins (POLICY_SERIAL, DISC_LOAD_CODE, DISC_LOAD_TYPE, DISC_LOAD_DESC, RATE_PER_1000_SA, RATE_PCNT_ON_PREM, DOCTOR_BMHC_NO, MEDICAL_FEES_AMT, REIMB_PROPOSER_AMT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;
@@ -79,7 +79,7 @@ public class LifeInsuranceImpl implements LifeInsuranceDao {
 	}
 
 	public void insertCoverDetails(PolicyCoverDto coverDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_COVER@ricb_com (POLICY_SERIAL, COVER_CODE, COVER_DESC, COVER_AMOUNT, PREMIUM_RATE, PREMIUM_AMOUNT) VALUES (?, ?, ?, ?, ?, ?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_COVER@ricb_com_ins (POLICY_SERIAL, COVER_CODE, COVER_DESC, COVER_AMOUNT, PREMIUM_RATE, PREMIUM_AMOUNT) VALUES (?, ?, ?, ?, ?, ?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;
@@ -101,7 +101,7 @@ public class LifeInsuranceImpl implements LifeInsuranceDao {
 	}
 
 	public void insertNomineeDetails(NomineeDto nomineeDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_NOMINEE@ricb_com (POLICY_SERIAL, BENEFIT_SHARE_PERCENT, FIRST_NAME, MIDDLE_NAME, LAST_NAME, CUSTOMER_NAME, GENDER, DATE_OF_BIRTH, CITIZEN_ID, PROPOSER_RELATION, ADDRESS_1, ADDRESS_2, ADDRESS_3, GEWOG, DZONGKHAG, MOBILE_NO, APPOINTEE_NAME, APPOINTEE_ADDRESS_1, APPOINTEE_ADDRESS_2, APPOINTEE_ADDRESS_3, APPOINTEE_GEWOG, APPOINTEE_DZONGKHAG, APPOINTEE_MOBILE, APPOINTEE_EMAIL_ID, APPOINTEE_CID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_NOMINEE@ricb_com_ins (POLICY_SERIAL, BENEFIT_SHARE_PERCENT, FIRST_NAME, MIDDLE_NAME, LAST_NAME, CUSTOMER_NAME, GENDER, DATE_OF_BIRTH, CITIZEN_ID, PROPOSER_RELATION, ADDRESS_1, ADDRESS_2, ADDRESS_3, GEWOG, DZONGKHAG, MOBILE_NO, APPOINTEE_NAME, APPOINTEE_ADDRESS_1, APPOINTEE_ADDRESS_2, APPOINTEE_ADDRESS_3, APPOINTEE_GEWOG, APPOINTEE_DZONGKHAG, APPOINTEE_MOBILE, APPOINTEE_EMAIL_ID, APPOINTEE_CID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;
@@ -142,7 +142,7 @@ public class LifeInsuranceImpl implements LifeInsuranceDao {
 	}
 
 	public void insertFamilyDetails(FamilyDetailsDto familyDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_FAMILY@ricb_com (POLICY_SERIAL, FIRST_NAME, MIDDLE_NAME, LAST_NAME, CUSTOMER_NAME, GENDER, DATE_OF_BIRTH, CITIZEN_ID, PROPOSER_RELATION, ADDRESS_1, ADDRESS_2, ADDRESS_3, GEWOG, DZONGKHAG, MOBILE_NO, RELATIONSHIP, STATUS, AGE, YEAR_OF_DEATH,CAUSE_OF_DEATH) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_FAMILY@ricb_com_ins (POLICY_SERIAL, FIRST_NAME, MIDDLE_NAME, LAST_NAME, CUSTOMER_NAME, GENDER, DATE_OF_BIRTH, CITIZEN_ID, PROPOSER_RELATION, ADDRESS_1, ADDRESS_2, ADDRESS_3, GEWOG, DZONGKHAG, MOBILE_NO, RELATIONSHIP, STATUS, AGE, YEAR_OF_DEATH,CAUSE_OF_DEATH) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;
@@ -178,7 +178,7 @@ public class LifeInsuranceImpl implements LifeInsuranceDao {
 	}
 
 	public void insertPremiumDetails(PolicyPremiumDto premiumDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_PREMIUM@ricb_com (POLICY_SERIAL, TABULAR_PREMIUM, STAFF_REBATE, AGENT_REBATE, PAYMENT_MODE_ADJ, SA_REBATE, ACCIDENT_EXTRA, OCCUP_HEALTH_EXTRA, PREMIUM_WAIVER, TERM_RIDER, EDUCATION_ALLOWANCE, ANNUAL_PREMIUM, PREMIUM_INSTALMENT, DISCOUNT_INSTALMENT, LOADING_INSTALMENT, ANNUAL_PREMIUM_PAYABLE, PAYABLE_INSTALMENT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_PREMIUM@ricb_com_ins (POLICY_SERIAL, TABULAR_PREMIUM, STAFF_REBATE, AGENT_REBATE, PAYMENT_MODE_ADJ, SA_REBATE, ACCIDENT_EXTRA, OCCUP_HEALTH_EXTRA, PREMIUM_WAIVER, TERM_RIDER, EDUCATION_ALLOWANCE, ANNUAL_PREMIUM, PREMIUM_INSTALMENT, DISCOUNT_INSTALMENT, LOADING_INSTALMENT, ANNUAL_PREMIUM_PAYABLE, PAYABLE_INSTALMENT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;
@@ -211,7 +211,7 @@ public class LifeInsuranceImpl implements LifeInsuranceDao {
 	}
 
 	public void insertPolicyDetails(PolicyDto policyDetails) {
-		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_POLICY@ricb_com (    POLICY_SERIAL, BRANCH_CODE, PROPOSAL_DATE, PRODUCT_CODE, CUSTOMER_CODE, JOINT_HOLDER_CODE, POLICY_TERM,    PREMIUM_PAYING_TERM, POLICY_START_DATE, POLICY_END_DATE, SUM_ASSURED, MODE_OF_PAYMENT, ANNUAL_PREMIUM_AMOUNT,    NO_OF_INSTALMENTS, PREMIUM_PER_INSTALMENT, RICB_EMPLOYEE, RICB_AGENT, ENTRY_AGE_PROPOSER, ENTRY_AGE_JOINT_HOLDER) VALUES (    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		String sql = "INSERT INTO ricb_li.MOBAPP_UWR_POLICY@ricb_com_ins (    POLICY_SERIAL, BRANCH_CODE, PROPOSAL_DATE, PRODUCT_CODE, CUSTOMER_CODE, JOINT_HOLDER_CODE, POLICY_TERM,    PREMIUM_PAYING_TERM, POLICY_START_DATE, POLICY_END_DATE, SUM_ASSURED, MODE_OF_PAYMENT, ANNUAL_PREMIUM_AMOUNT,    NO_OF_INSTALMENTS, PREMIUM_PER_INSTALMENT, RICB_EMPLOYEE, RICB_AGENT, ENTRY_AGE_PROPOSER, ENTRY_AGE_JOINT_HOLDER) VALUES (    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
 		Connection conn = null;
 		PreparedStatement pst = null;

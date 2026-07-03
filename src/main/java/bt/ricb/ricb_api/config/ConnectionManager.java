@@ -34,7 +34,8 @@ public class ConnectionManager {
 			Class.forName("oracle.jdbc.driver.OracleDriver");
 
 			connection = DriverManager.getConnection(
-					"jdbc:oracle:thin:@192.168.0.101:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "ricb");
+//					"jdbc:oracle:thin:@192.168.0.101:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "ricb");
+                    "jdbc:oracle:thin:@192.168.0.101:1521:iims?oracle.jdbc.timezoneAsRegion=false", "RICB_UWR", "ricb");
 
 			System.out.println("connection established");
 

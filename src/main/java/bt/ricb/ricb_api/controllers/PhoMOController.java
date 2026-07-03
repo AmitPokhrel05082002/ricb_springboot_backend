@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,51 +40,174 @@ public class PhoMOController {
         return jdbcTemplate.queryForList(sql);
     }
 
-    // ================= calculatePremium =================
+//     ================= calculatePremium =================
+//    @GetMapping("/premium")
+//    public Double calculatePremium(
+//            @RequestParam int product,
+//            @RequestParam String method,
+//            @RequestParam int term,
+//            @RequestParam double sumAssured,
+//            @RequestParam int age,
+//            @RequestParam String discountFlag) {
+//
+//        String rateSql = "SELECT rate FROM life_insurance_rates WHERE life_insurance_product_id = ? AND term = ? AND age = ?";
+//        Double rate = jdbcTemplate.queryForObject(rateSql, new Object[]{product, term, age}, Double.class);
+//
+//        if(rate == null) rate = 0.0;
+//        double adjustment = 0.0;
+//
+//        if("Y".equalsIgnoreCase(discountFlag)) rate = rate - (rate * 0.05);
+//
+//        if(product != 1) {
+//            switch (method.toLowerCase()) {
+//                case "yearly": rate -= 0.75; break;
+//                case "half": rate -= 0.50; break;
+//                case "monthly": rate += rate * 0.05; break;
+//            }
+//
+//            if(product == 2) {
+//                if(sumAssured >= 100000 && sumAssured < 200000) adjustment = 1;
+//                else if(sumAssured >= 200000 && sumAssured < 300000) adjustment = 1.5;
+//                else if(sumAssured >= 300000) adjustment = 2;
+//            } else {
+//                if(sumAssured >= 25000 && sumAssured <= 49999) adjustment = 1;
+//                else if(sumAssured >= 50000 && sumAssured <= 99999) adjustment = 1.5;
+//                else if(sumAssured >= 100000) adjustment = 2;
+//            }
+//
+//        } else { // product == 1
+//            if(sumAssured >= 150001 && sumAssured <= 300000) adjustment = 0.5;
+//            else if(sumAssured >= 300001) adjustment = 1;
+//            adjustment = (rate * adjustment) / 100;
+//            adjustment = round(adjustment, 2);
+//        }
+//
+//        rate -= adjustment;
+//        rate = (rate * sumAssured) / 1000;
+//        return round(rate, 2);
+//    }
+
+
     @GetMapping("/premium")
-    public Double calculatePremium(
+    public Map<String, Double> calculatePremium(
+
             @RequestParam int product,
             @RequestParam String method,
             @RequestParam int term,
             @RequestParam double sumAssured,
             @RequestParam int age,
-            @RequestParam String discountFlag) {
+            @RequestParam String discountFlag,
+            @RequestParam int occupationId) {
 
-        String rateSql = "SELECT rate FROM life_insurance_rates WHERE life_insurance_product_id = ? AND term = ? AND age = ?";
-        Double rate = jdbcTemplate.queryForObject(rateSql, new Object[]{product, term, age}, Double.class);
+        // ================= BASE RATE =================
+        String rateSql = """
+        SELECT rate
+        FROM life_insurance_rates
+        WHERE life_insurance_product_id = ?
+          AND term = ?
+          AND age = ?
+    """;
 
-        if(rate == null) rate = 0.0;
+        Double rate = jdbcTemplate.queryForObject(
+                rateSql,
+                new Object[]{product, term, age},
+                Double.class
+        );
+
+        if (rate == null) rate = 0.0;
+
+        double baseRate = rate;
+
+        double staffAgentRebate = 0.0;
+        double paymentModeAdjustment = 0.0;
+        double saRebate = 0.0;
         double adjustment = 0.0;
 
-        if("Y".equalsIgnoreCase(discountFlag)) rate = rate - (rate * 0.05);
-
-        if(product != 1) {
-            switch (method.toLowerCase()) {
-                case "yearly": rate -= 0.75; break;
-                case "half": rate -= 0.50; break;
-                case "monthly": rate += rate * 0.05; break;
-            }
-
-            if(product == 2) {
-                if(sumAssured >= 100000 && sumAssured < 200000) adjustment = 1;
-                else if(sumAssured >= 200000 && sumAssured < 300000) adjustment = 1.5;
-                else if(sumAssured >= 300000) adjustment = 2;
-            } else {
-                if(sumAssured >= 25000 && sumAssured <= 49999) adjustment = 1;
-                else if(sumAssured >= 50000 && sumAssured <= 99999) adjustment = 1.5;
-                else if(sumAssured >= 100000) adjustment = 2;
-            }
-
-        } else { // product == 1
-            if(sumAssured >= 150001 && sumAssured <= 300000) adjustment = 0.5;
-            else if(sumAssured >= 300001) adjustment = 1;
-            adjustment = (rate * adjustment) / 100;
-            adjustment = round(adjustment, 2);
+        // ================= STAFF / AGENT =================
+        if ("Y".equalsIgnoreCase(discountFlag)) {
+            staffAgentRebate = rate * 0.05;
+            rate = rate - staffAgentRebate;
         }
 
+        // ================= MODE (APPLIES TO ALL PRODUCTS) =================
+        switch (method.toLowerCase()) {
+
+            case "yearly":
+                paymentModeAdjustment = -0.75;
+                rate -= 0.75;
+                break;
+
+            case "half":
+                paymentModeAdjustment = -0.50;
+                rate -= 0.50;
+                break;
+
+            case "monthly":
+                paymentModeAdjustment = rate * 0.05;
+                rate += paymentModeAdjustment;
+                break;
+        }
+
+        // ================= SA ADJUSTMENT =================
+
+        if (product == 2) {
+
+            // SPECIAL PRODUCT SLAB
+            if (sumAssured >= 100000 && sumAssured < 200000) adjustment = 1;
+            else if (sumAssured >= 200000 && sumAssured < 300000) adjustment = 1.5;
+            else if (sumAssured >= 300000) adjustment = 2;
+
+        } else {
+
+            // ALL OTHER PRODUCTS (1, 3, 4, etc.)
+            if (sumAssured >= 25000 && sumAssured <= 49999) adjustment = 1;
+            else if (sumAssured >= 50000 && sumAssured <= 99999) adjustment = 1.5;
+            else if (sumAssured >= 100000) adjustment = 2;
+        }
+
+        // ================= APPLY SA REBATE =================
+        saRebate = adjustment;
         rate -= adjustment;
-        rate = (rate * sumAssured) / 1000;
-        return round(rate, 2);
+
+        // ================= OCCUPATION =================
+        String occSql = """
+        SELECT rate
+        FROM occupation_rate
+        WHERE id = ?
+    """;
+
+        Double occupationRate = jdbcTemplate.queryForObject(
+                occSql,
+                new Object[]{occupationId},
+                Double.class
+        );
+
+        if (occupationRate == null) occupationRate = 0.0;
+
+        // ================= PREMIUM =================
+        double basePremium = (rate * sumAssured) / 1000;
+
+        double occupationPremium = (occupationRate * sumAssured) / 1000;
+
+        double totalPremium = basePremium + occupationPremium;
+
+        // ================= RESPONSE =================
+        Map<String, Double> response = new LinkedHashMap<>();
+
+        response.put("baseRate", baseRate);
+        response.put("staffAgentRebate", staffAgentRebate);
+        response.put("paymentModeAdjustment", paymentModeAdjustment);
+        response.put("saRebate", saRebate);
+
+        response.put("adjustedRate", rate);
+
+        response.put("occupationRate", occupationRate);
+        response.put("occupationPremium", occupationPremium);
+
+        response.put("basePremium", basePremium);
+        response.put("totalPremium", totalPremium);
+
+        return response;
     }
 
     // ================= getRate =================
@@ -289,40 +413,64 @@ public class PhoMOController {
                 childAge,
                 proposerAge);
 
-        if (baseRate == null) baseRate = BigDecimal.ZERO;
+        if (baseRate == null) {
+            baseRate = BigDecimal.ZERO;
+        }
 
         BigDecimal adjustedRate = baseRate;
 
+        BigDecimal staffAgentRebate = BigDecimal.ZERO;
+        BigDecimal paymentModeAdjustment = BigDecimal.ZERO;
+        BigDecimal saRebate = BigDecimal.ZERO;
+
         // ================= STAFF / AGENT =================
         if ("Y".equalsIgnoreCase(discountFlag)) {
-            adjustedRate = adjustedRate.subtract(new BigDecimal("0.5"));
+
+            staffAgentRebate = baseRate.multiply(new BigDecimal("0.05"));
+
+            adjustedRate = adjustedRate.subtract(staffAgentRebate);
         }
 
-        // ================= MODE =================
+        // ================= PAYMENT MODE =================
         switch (mode.toLowerCase()) {
 
+            case "monthly":
+
+                paymentModeAdjustment = adjustedRate.multiply(new BigDecimal("0.05"));
+
+                adjustedRate = adjustedRate.add(paymentModeAdjustment);
+                break;
+
             case "yearly":
-                adjustedRate = adjustedRate.subtract(new BigDecimal("0.75"));
+
+                paymentModeAdjustment = new BigDecimal("-0.75");
+
+                adjustedRate = adjustedRate.add(paymentModeAdjustment);
                 break;
 
             case "half":
-                adjustedRate = adjustedRate.subtract(new BigDecimal("0.50"));
-                break;
 
-            case "monthly":
-                adjustedRate = adjustedRate.add(
-                        adjustedRate.multiply(new BigDecimal("0.05"))
-                );
+                paymentModeAdjustment = new BigDecimal("-0.50");
+
+                adjustedRate = adjustedRate.add(paymentModeAdjustment);
                 break;
 
             case "quarterly":
             case "si":
+
+                paymentModeAdjustment = BigDecimal.ZERO;
                 break;
+
+            default:
+                paymentModeAdjustment = BigDecimal.ZERO;
         }
 
         // ================= SA REBATE =================
         if (sumAssured >= 100000) {
-            adjustedRate = adjustedRate.subtract(new BigDecimal("2"));
+
+            saRebate = new BigDecimal("2");
+
+            adjustedRate = adjustedRate.subtract(saRebate);
         }
 
         // ================= OCCUPATION RATE =================
@@ -332,29 +480,35 @@ public class PhoMOController {
         WHERE id = ?
         """;
 
-        BigDecimal occRate = jdbcTemplate.queryForObject(
+        BigDecimal occupationRate = jdbcTemplate.queryForObject(
                 occSql,
                 BigDecimal.class,
                 occupationId);
 
-        if (occRate == null) occRate = BigDecimal.ZERO;
+        if (occupationRate == null) {
+            occupationRate = BigDecimal.ZERO;
+        }
+
+        // ================= PREMIUM CALCULATION =================
+        BigDecimal sa = BigDecimal.valueOf(sumAssured);
 
         BigDecimal basePremium =
-                adjustedRate.multiply(BigDecimal.valueOf(sumAssured))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+                adjustedRate.multiply(sa).divide(BigDecimal.valueOf(1000));
 
-        // ================= OCCUPATION PREMIUM =================
         BigDecimal occupationPremium =
-                occRate.multiply(BigDecimal.valueOf(sumAssured))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+                occupationRate.multiply(sa).divide(BigDecimal.valueOf(1000));
 
-        // ================= TOTAL =================
-        BigDecimal totalPremium =
-                basePremium.add(occupationPremium);
+        BigDecimal totalPremium = basePremium.add(occupationPremium);
 
-        Map<String, Double> response = new HashMap<>();
+        // ================= RESPONSE (RAW VALUES ONLY) =================
+        Map<String, Double> response = new LinkedHashMap<>();
+
         response.put("baseRate", baseRate.doubleValue());
+        response.put("staffAgentRebate", staffAgentRebate.doubleValue());
+        response.put("paymentModeAdjustment", paymentModeAdjustment.doubleValue());
+        response.put("saRebate", saRebate.doubleValue());
         response.put("adjustedRate", adjustedRate.doubleValue());
+        response.put("occupationRate", occupationRate.doubleValue());
         response.put("basePremium", basePremium.doubleValue());
         response.put("occupationPremium", occupationPremium.doubleValue());
         response.put("totalPremium", totalPremium.doubleValue());
@@ -445,7 +599,7 @@ public class PhoMOController {
           AND ? BETWEEN age_from AND age_to
     """;
 
-        BigDecimal rate = jdbcTemplate.queryForObject(
+        BigDecimal baseRate = jdbcTemplate.queryForObject(
                 sql,
                 BigDecimal.class,
                 product,
@@ -453,24 +607,40 @@ public class PhoMOController {
                 premiumTerm,
                 age);
 
-        if (rate == null) rate = BigDecimal.ZERO;
+        if (baseRate == null) {
+            baseRate = BigDecimal.ZERO;
+        }
 
-        // keep original base rate for transparency
-        BigDecimal baseRate = rate;
+        BigDecimal adjustedRate = baseRate;
+
+        BigDecimal staffAgentRebate = BigDecimal.ZERO;
+        BigDecimal modeAdjustment = BigDecimal.ZERO;
+        BigDecimal saRebate = BigDecimal.ZERO;
+
+        BigDecimal sa = BigDecimal.valueOf(sumAssured);
 
         // ================= STAFF / AGENT (-3%) =================
         if ("Y".equalsIgnoreCase(discountFlag)) {
-            rate = rate.subtract(rate.multiply(new BigDecimal("0.03")));
+
+            staffAgentRebate = baseRate.multiply(new BigDecimal("0.03"));
+
+            adjustedRate = adjustedRate.subtract(staffAgentRebate);
         }
 
-        // ================= MODE ADJUSTMENT (Single - 0.25%) =================
+        // ================= MODE ADJUSTMENT =================
         if ("Single".equalsIgnoreCase(mode) && sumAssured > 500000) {
-            rate = rate.subtract(rate.multiply(new BigDecimal("0.0025")));
+
+            modeAdjustment = adjustedRate.multiply(new BigDecimal("0.0025"));
+
+            adjustedRate = adjustedRate.subtract(modeAdjustment);
         }
 
-        // ================= SA REBATE (-1% if SA > 500,000) =================
+        // ================= SA REBATE (-1%) =================
         if (sumAssured > 500000) {
-            rate = rate.subtract(rate.multiply(new BigDecimal("0.01")));
+
+            saRebate = adjustedRate.multiply(new BigDecimal("0.01"));
+
+            adjustedRate = adjustedRate.subtract(saRebate);
         }
 
         // ================= OCCUPATION RATE =================
@@ -485,24 +655,34 @@ public class PhoMOController {
                 BigDecimal.class,
                 occupationId);
 
-        if (occRate == null) occRate = BigDecimal.ZERO;
+        if (occRate == null) {
+            occRate = BigDecimal.ZERO;
+        }
 
         // ================= PREMIUM CALCULATION =================
         BigDecimal basePremium =
-                rate.multiply(BigDecimal.valueOf(sumAssured))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+                adjustedRate.multiply(sa)
+                        .divide(BigDecimal.valueOf(1000));
 
         BigDecimal occupationPremium =
-                occRate.multiply(BigDecimal.valueOf(sumAssured))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+                occRate.multiply(sa)
+                        .divide(BigDecimal.valueOf(1000));
 
         BigDecimal totalPremium =
                 basePremium.add(occupationPremium);
 
-        // ================= RESPONSE =================
-        Map<String, Double> response = new HashMap<>();
+        // ================= RESPONSE (RAW VALUES ONLY) =================
+        Map<String, Double> response = new LinkedHashMap<>();
+
         response.put("baseRate", baseRate.doubleValue());
-        response.put("adjustedRate", rate.doubleValue());
+        response.put("staffAgentRebate", staffAgentRebate.doubleValue());
+        response.put("modeAdjustment", modeAdjustment.doubleValue());
+        response.put("saRebate", saRebate.doubleValue());
+
+        response.put("adjustedRate", adjustedRate.doubleValue());
+
+        response.put("occupationRate", occRate.doubleValue());
+
         response.put("basePremium", basePremium.doubleValue());
         response.put("occupationPremium", occupationPremium.doubleValue());
         response.put("totalPremium", totalPremium.doubleValue());
@@ -693,7 +873,7 @@ public class PhoMOController {
           AND is_regular = ?
     """;
 
-        BigDecimal rate = jdbcTemplate.queryForObject(
+        BigDecimal baseRate = jdbcTemplate.queryForObject(
                 sql,
                 BigDecimal.class,
                 product,
@@ -702,21 +882,28 @@ public class PhoMOController {
                 isRegular
         );
 
-        if (rate == null) rate = BigDecimal.ZERO;
+        if (baseRate == null) {
+            baseRate = BigDecimal.ZERO;
+        }
 
-        BigDecimal adjustedRate = rate;
+        BigDecimal adjustedRate = baseRate;
+
+        BigDecimal staffAgentRebate = BigDecimal.ZERO;
+
+        BigDecimal sa = BigDecimal.valueOf(sumAssured);
 
         // ================= EMPLOYEE / AGENT (-5%) =================
         if ("Y".equalsIgnoreCase(discountFlag)) {
-            adjustedRate = adjustedRate.subtract(
-                    adjustedRate.multiply(new BigDecimal("0.05"))
-            );
+
+            staffAgentRebate = baseRate.multiply(new BigDecimal("0.05"));
+
+            adjustedRate = adjustedRate.subtract(staffAgentRebate);
         }
 
         // ================= BASE PREMIUM =================
         BigDecimal basePremium =
-                adjustedRate.multiply(BigDecimal.valueOf(sumAssured))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+                adjustedRate.multiply(sa)
+                        .divide(BigDecimal.valueOf(1000));
 
         // ================= OCCUPATION PREMIUM =================
         String occSql = """
@@ -731,23 +918,29 @@ public class PhoMOController {
                 occupationId
         );
 
-        if (occRate == null) occRate = BigDecimal.ZERO;
+        if (occRate == null) {
+            occRate = BigDecimal.ZERO;
+        }
 
         BigDecimal occupationPremium =
-                occRate.multiply(BigDecimal.valueOf(sumAssured))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+                occRate.multiply(sa)
+                        .divide(BigDecimal.valueOf(1000));
 
         // ================= TOTAL PREMIUM =================
         BigDecimal totalPremium =
                 basePremium.add(occupationPremium);
 
-        // ================= RESPONSE =================
-        Map<String, Double> response = new HashMap<>();
-        response.put("baseRate", rate.doubleValue());
+        // ================= RESPONSE (RAW VALUES ONLY) =================
+        Map<String, Double> response = new LinkedHashMap<>();
+
+        response.put("baseRate", baseRate.doubleValue());
+        response.put("staffAgentRebate", staffAgentRebate.doubleValue());
         response.put("adjustedRate", adjustedRate.doubleValue());
+
         response.put("basePremium", basePremium.doubleValue());
         response.put("occupationPremium", occupationPremium.doubleValue());
         response.put("totalPremium", totalPremium.doubleValue());
+
         return response;
     }
 
