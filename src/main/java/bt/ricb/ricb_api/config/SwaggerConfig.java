@@ -116,6 +116,19 @@ public class SwaggerConfig {
     }
 
     @Bean
+    public GroupedOpenApi premium() {
+        return GroupedOpenApi.builder()
+                .group("Premium")
+                .displayName("Premium Endpoints")
+                .pathsToMatch("/li/**")
+                .addOperationCustomizer((operation, handlerMethod) -> {
+                    operation.setTags(Collections.singletonList("premium"));
+                    return operation;
+                })
+                .build();
+    }
+
+    @Bean
     public GroupedOpenApi creditControllerGroup() {
         return GroupedOpenApi.builder()
                 .group("Credit")

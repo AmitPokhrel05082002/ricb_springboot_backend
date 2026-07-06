@@ -26,6 +26,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @CrossOrigin({ "*" })
@@ -115,130 +118,170 @@ public class LifeInsuranceApi {
         }
     }
 
-@PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-public ResponseEntity<?> fileUploadLifeInsurance(
-        @RequestParam("file") MultipartFile file,
-        @RequestParam("doc_sub_cat_code") String docSubCatCode,
-        @RequestParam("validity_date") String validityDate,
-        @RequestParam("policy_no") String policyNo,
-        @RequestParam("policy_start_date") String policyStartDate,
-        @RequestParam("policy_end_date") String policyEndDate,
-        @RequestParam("cust_name") String custName,
-        @RequestParam("cust_cid") String custCid,
-        @RequestParam("product_code") String productCode
-) {
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadMultipleLifeInsuranceDocuments(
 
-    Connection conn = null;
-    PreparedStatement ps = null;
-    ResultSet rs = null;
+            @RequestParam("files") MultipartFile[] files,
+            @RequestParam("doc_sub_cat_code") String docSubCatCode,
+            @RequestParam("validity_date") String validityDate,
+            @RequestParam("policy_no") String policyNo,
+            @RequestParam("policy_start_date") String policyStartDate,
+            @RequestParam("policy_end_date") String policyEndDate,
+            @RequestParam("cust_name") String custName,
+            @RequestParam("cust_cid") String custCid,
+            @RequestParam("product_code") String productCode
 
-    try {
+    ) {
 
-        // ================= FILE VALIDATION =================
-        String originalFileName = file.getOriginalFilename();
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
 
-        if (originalFileName == null || !originalFileName.contains(".")) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", "error",
-                    "message", "Invalid file"
-            ));
+        List<Map<String, Object>> uploadedFiles = new ArrayList<>();
+
+        try {
+
+            conn = ConnectionManager.fileUploadLifeInsurance();
+
+            for (MultipartFile file : files) {
+
+                // ================= FILE VALIDATION =================
+                String originalFileName = file.getOriginalFilename();
+
+                if (originalFileName == null || !originalFileName.contains(".")) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "status", "error",
+                            "message", "Invalid file : " + originalFileName
+                    ));
+                }
+
+                String extension = originalFileName.substring(originalFileName.lastIndexOf(".")).toLowerCase();
+
+                if (!extension.equals(".pdf") && !extension.equals(".docx")) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "status", "error",
+                            "message", "Only PDF and DOCX files are allowed."
+                    ));
+                }
+
+                long maxSize = 5 * 1024 * 1024;
+
+                if (file.getSize() > maxSize) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "status", "error",
+                            "message", originalFileName + " exceeds 5MB."
+                    ));
+                }
+
+                // ================= GET SERIAL NO =================
+                String seqQuery = "SELECT SEQ_T_DMS_METADATA_DETAILS.NEXTVAL AS srl_no FROM dual";
+
+                ps = conn.prepareStatement(seqQuery);
+                rs = ps.executeQuery();
+
+                long serialNo = 0;
+
+                if (rs.next()) {
+                    serialNo = rs.getLong("srl_no");
+                }
+
+                rs.close();
+                ps.close();
+
+                // ================= UPLOAD TO MINIO =================
+                String objectPath = minioService.uploadFile(file);
+
+                // ================= GENERATED FILE NAME =================
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy_HH-mm-ss");
+
+                String generatedFileName =
+                        policyNo + "_DOC_" +
+                                LocalDateTime.now().format(formatter) +
+                                extension;
+
+                // ================= FILE SIZE =================
+                double sizeMB = (double) file.getSize() / (1024 * 1024);
+
+                BigDecimal fileSize =
+                        new BigDecimal(sizeMB).setScale(2, RoundingMode.HALF_UP);
+
+                String fileType = extension.replace(".", "");
+
+                // ================= INSERT =================
+                String insertQuery =
+                        "INSERT INTO RICB_EIS.T_DMS_METADATA_DETAILS (" +
+                                "SERIAL_NO, DEPT_CODE, DOC_TYPE, DOC_CAT_CODE, DOC_SUB_CAT_CODE," +
+                                "BRANCH_CODE, VALIDITY_DATE, REMARKS," +
+                                "MD_01, MD_02, MD_03, MD_04, MD_05, MD_06," +
+                                "FILE_NAME_SYS, FILE_NAME_GEN, FILE_SIZE, FILE_TYPE," +
+                                "VERSION_NO, FILE_PATH, UPLOAD_BY, UPLOAD_DATE," +
+                                "UPLOAD_TIME, STATUS)" +
+                                " VALUES (" +
+                                "?, 'D003','C','1',?,'B001'," +
+                                "TO_DATE(?,'YYYY-MM-DD')," +
+                                "'Web'," +
+                                "?,?,?,?,?,?,?," +
+                                "?,?,?, '1', ?, " +
+                                "'Web',SYSDATE,TO_CHAR(SYSDATE,'HH24:MI:SS'),'A')";
+
+                ps = conn.prepareStatement(insertQuery);
+
+                ps.setLong(1, serialNo);
+                ps.setString(2, docSubCatCode);
+                ps.setString(3, validityDate);
+
+                // Metadata
+                ps.setString(4, policyNo);
+                ps.setString(5, policyStartDate);
+                ps.setString(6, policyEndDate);
+                ps.setString(7, custName);
+                ps.setString(8, custCid);
+                ps.setString(9, productCode);
+
+                // File Details
+                ps.setString(10, objectPath);
+                ps.setString(11, generatedFileName);
+                ps.setDouble(12, fileSize.doubleValue());
+                ps.setString(13, fileType);
+                ps.setString(14, objectPath);
+
+                System.out.println(insertQuery);
+                ps.executeUpdate();
+
+                ps.close();
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("serial_no", serialNo);
+                result.put("file_name", generatedFileName);
+                result.put("file_path", objectPath);
+
+                uploadedFiles.add(result);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("total_uploaded", uploadedFiles.size());
+            response.put("files", uploadedFiles);
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    Map.of(
+                            "status", "error",
+                            "message", e.getMessage()
+                    )
+            );
+
+        } finally {
+
+            ConnectionManager.close(conn, rs, ps);
+
         }
-
-        String extension = originalFileName.substring(originalFileName.lastIndexOf(".")).toLowerCase();
-
-        if (!extension.equals(".pdf") && !extension.equals(".docx")) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", "error",
-                    "message", "Only PDF and DOCX files are allowed"
-            ));
-        }
-
-        long maxSize = 5 * 1024 * 1024;
-        if (file.getSize() > maxSize) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", "error",
-                    "message", "File size exceeds 5MB"
-            ));
-        }
-
-        // ================= DB CONNECTION =================
-        conn = ConnectionManager.fileUploadLifeInsurance();
-
-        // ================= SERIAL NO =================
-        String seqQuery = "SELECT SEQ_T_DMS_METADATA_DETAILS.nextval + 1 AS srl_no FROM dual";
-        ps = conn.prepareStatement(seqQuery);
-        rs = ps.executeQuery();
-
-        long serialNo = 0;
-        if (rs.next()) {
-            serialNo = rs.getLong("srl_no");
-        }
-
-        rs.close();
-        ps.close();
-
-        // ================= UPLOAD TO MINIO =================
-        String objectPath = minioService.uploadFile(file); // ✅ FIXED
-
-        // ================= FILE NAME GEN =================
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy_HH-mm-ss");
-        String fileNameGen = policyNo + "_DOC_" + LocalDateTime.now().format(formatter) + extension;
-
-        // ================= FILE SIZE =================
-        double fileSizeMB = (double) file.getSize() / (1024 * 1024);
-        BigDecimal fileSizeRounded = new BigDecimal(fileSizeMB).setScale(2, RoundingMode.HALF_UP);
-
-        String fileType = extension.replace(".", "");
-
-        // ================= INSERT QUERY =================
-        String insertQuery = "INSERT INTO RICB_EIS.T_DMS_METADATA_DETAILS (" +
-                "SERIAL_NO, DEPT_CODE, DOC_TYPE, DOC_CAT_CODE, DOC_SUB_CAT_CODE, BRANCH_CODE, VALIDITY_DATE, " +
-                "REMARKS, MD_01, MD_02, MD_03, MD_04, MD_05, MD_06, " +
-                "FILE_NAME_SYS, FILE_NAME_GEN, FILE_SIZE, FILE_TYPE, VERSION_NO, FILE_PATH, " +
-                "UPLOAD_BY, UPLOAD_DATE, UPLOAD_TIME, STATUS) " +
-                "VALUES (?, 'D003', 'C', '1', ?, 'B001', TO_DATE(?, 'YYYY-MM-DD'), " +
-                "'Web', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '1', ?, " +
-                "'Web', SYSDATE, TO_CHAR(SYSDATE, 'HH24:MI:SS'), 'A')";
-
-        ps = conn.prepareStatement(insertQuery);
-
-        ps.setLong(1, serialNo);
-        ps.setString(2, docSubCatCode);
-        ps.setString(3, validityDate);
-
-        ps.setString(4, policyNo);
-        ps.setString(5, policyStartDate);
-        ps.setString(6, policyEndDate);
-        ps.setString(7, custName);
-        ps.setString(8, custCid);
-        ps.setString(9, productCode);
-
-        // file info
-        ps.setString(10, objectPath);   // sys file name stored in MinIO
-        ps.setString(11, fileNameGen);
-        ps.setDouble(12, fileSizeRounded.doubleValue());
-        ps.setString(13, fileType);
-        ps.setString(14, objectPath);   // FILE_PATH = MinIO object path
-
-        ps.executeUpdate();
-
-        // ================= RESPONSE =================
-        return ResponseEntity.ok(Map.of(
-                "status", "success",
-                "serial_no", serialNo,
-                "file_path", objectPath
-        ));
-
-    } catch (Exception e) {
-        e.printStackTrace();
-        return ResponseEntity.status(500).body(Map.of(
-                "status", "error",
-                "message", e.getMessage()
-        ));
-    } finally {
-        ConnectionManager.close(conn, rs, ps);
     }
-}
 
     @GetMapping("/lifeInsurance_cert_online")
     public ResponseEntity<String> getLifeInsuranceCertificate(

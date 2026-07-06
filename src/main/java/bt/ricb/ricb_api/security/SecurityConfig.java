@@ -55,7 +55,8 @@ public class SecurityConfig {
                                 "/claims/resubmit",
                                 "/claims/complete",
                                 "/claims/reject",
-                                "/claims/approve"
+                                "/claims/approve",
+                                "/claims/rural-claim"
                         ).authenticated()
 
                         // ================= ADMIN ONLY =================
