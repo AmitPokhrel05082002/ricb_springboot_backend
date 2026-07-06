@@ -114,7 +114,9 @@ public class PhoMOController {
                 Double.class
         );
 
-        if (rate == null) rate = 0.0;
+        if (rate == null) {
+            rate = 0.0;
+        }
 
         double baseRate = rate;
 
@@ -126,50 +128,79 @@ public class PhoMOController {
         // ================= STAFF / AGENT =================
         if ("Y".equalsIgnoreCase(discountFlag)) {
             staffAgentRebate = rate * 0.05;
-            rate = rate - staffAgentRebate;
+            rate -= staffAgentRebate;
         }
 
-        // ================= MODE (APPLIES TO ALL PRODUCTS) =================
-        switch (method.toLowerCase()) {
+        // ===================================================
+        // PRODUCTS OTHER THAN PRODUCT 1
+        // ===================================================
+        if (product != 1) {
 
-            case "yearly":
-                paymentModeAdjustment = -0.75;
-                rate -= 0.75;
-                break;
+            // ================= PAYMENT MODE =================
+            switch (method.toLowerCase()) {
 
-            case "half":
-                paymentModeAdjustment = -0.50;
-                rate -= 0.50;
-                break;
+                case "yearly":
+                    paymentModeAdjustment = -0.75;
+                    rate -= 0.75;
+                    break;
 
-            case "monthly":
-                paymentModeAdjustment = rate * 0.05;
-                rate += paymentModeAdjustment;
-                break;
+                case "half":
+                    paymentModeAdjustment = -0.50;
+                    rate -= 0.50;
+                    break;
+
+                case "monthly":
+                    paymentModeAdjustment = rate * 0.05;
+                    rate += paymentModeAdjustment;
+                    break;
+            }
+
+            // ================= SA REBATE =================
+            if (product == 2) {
+
+                if (sumAssured >= 100000 && sumAssured < 200000) {
+                    adjustment = 1;
+                } else if (sumAssured >= 200000 && sumAssured < 300000) {
+                    adjustment = 1.5;
+                } else if (sumAssured >= 300000) {
+                    adjustment = 2;
+                }
+
+            } else {
+
+                if (sumAssured >= 25000 && sumAssured <= 49999) {
+                    adjustment = 1;
+                } else if (sumAssured >= 50000 && sumAssured <= 99999) {
+                    adjustment = 1.5;
+                } else if (sumAssured >= 100000) {
+                    adjustment = 2;
+                }
+            }
+
         }
+        // PRODUCT 1
+        else {
 
-        // ================= SA ADJUSTMENT =================
+            // Product 1 has NO payment mode adjustment
+            paymentModeAdjustment = 0.0;
 
-        if (product == 2) {
+            double percent = 0.0;
 
-            // SPECIAL PRODUCT SLAB
-            if (sumAssured >= 100000 && sumAssured < 200000) adjustment = 1;
-            else if (sumAssured >= 200000 && sumAssured < 300000) adjustment = 1.5;
-            else if (sumAssured >= 300000) adjustment = 2;
+            if (sumAssured >= 150001 && sumAssured <= 300000) {
+                percent = 0.5;
+            } else if (sumAssured >= 300001) {
+                percent = 1;
+            }
 
-        } else {
-
-            // ALL OTHER PRODUCTS (1, 3, 4, etc.)
-            if (sumAssured >= 25000 && sumAssured <= 49999) adjustment = 1;
-            else if (sumAssured >= 50000 && sumAssured <= 99999) adjustment = 1.5;
-            else if (sumAssured >= 100000) adjustment = 2;
+            adjustment = (rate * percent) / 100;
+            adjustment = round(adjustment, 2);
         }
 
         // ================= APPLY SA REBATE =================
         saRebate = adjustment;
         rate -= adjustment;
 
-        // ================= OCCUPATION =================
+        // ================= OCCUPATION RATE =================
         String occSql = """
         SELECT rate
         FROM occupation_rate
@@ -182,7 +213,9 @@ public class PhoMOController {
                 Double.class
         );
 
-        if (occupationRate == null) occupationRate = 0.0;
+        if (occupationRate == null) {
+            occupationRate = 0.0;
+        }
 
         // ================= PREMIUM =================
         double basePremium = (rate * sumAssured) / 1000;
@@ -198,13 +231,10 @@ public class PhoMOController {
         response.put("staffAgentRebate", staffAgentRebate);
         response.put("paymentModeAdjustment", paymentModeAdjustment);
         response.put("saRebate", saRebate);
-
         response.put("adjustedRate", rate);
-
         response.put("occupationRate", occupationRate);
-        response.put("occupationPremium", occupationPremium);
-
         response.put("basePremium", basePremium);
+        response.put("occupationPremium", occupationPremium);
         response.put("totalPremium", totalPremium);
 
         return response;
@@ -773,84 +803,84 @@ public class PhoMOController {
         return rate != null ? rate : 0.0;
     }
 
-    @GetMapping("/ktn-CI-rate")
-    public Double getCIRate(
-
-            @RequestParam int product,
-            @RequestParam int term,
-            @RequestParam int age,
-            @RequestParam String isRegular) {
-
-        String sql = """
-        SELECT rate
-        FROM critical_illness_rate
-        WHERE life_insurance_product_id = ?
-          AND term = ?
-          AND age = ?
-          AND is_regular = ?
-        """;
-
-        Double rate = jdbcTemplate.queryForObject(
-                sql,
-                Double.class,
-                product,
-                term,
-                age,
-                isRegular
-        );
-
-        return rate != null ? rate : 0.0;
-    }
-
-    @GetMapping("/ktn-CI-premium")
-    public Map<String, Double> calculateCIPremium(
-
-            @RequestParam int product,
-            @RequestParam int term,
-            @RequestParam int age,
-            @RequestParam String isRegular,
-            @RequestParam double sumAssured) {
-
-        // ================= CI RATE =================
-        String sql = """
-        SELECT rate
-        FROM critical_illness_rate
-        WHERE life_insurance_product_id = ?
-          AND term = ?
-          AND age = ?
-          AND is_regular = ?
-        """;
-
-        Double rate = jdbcTemplate.queryForObject(
-                sql,
-                Double.class,
-                product,
-                term,
-                age,
-                isRegular);
-
-        if (rate == null) {
-            rate = 0.0;
-        }
-
-        // ================= CI COVERAGE =================
-        double fiftyPercentSA = sumAssured * 0.50;
-        double ciCoverage = Math.min(fiftyPercentSA, 2_000_000);
-
-        // ================= CI PREMIUM =================
-        BigDecimal ciPremium =
-                BigDecimal.valueOf(rate)
-                        .multiply(BigDecimal.valueOf(ciCoverage))
-                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
-
-        // ================= RESPONSE =================
-        Map<String, Double> response = new HashMap<>();
-        response.put("rate", rate);
-        response.put("ciCoverage", ciCoverage);
-        response.put("ciPremium", ciPremium.doubleValue());
-
-        return response;
-    }
+//    @GetMapping("/ktn-CI-rate")
+//    public Double getCIRate(
+//
+//            @RequestParam int product,
+//            @RequestParam int term,
+//            @RequestParam int age,
+//            @RequestParam String isRegular) {
+//
+//        String sql = """
+//        SELECT rate
+//        FROM critical_illness_rate
+//        WHERE life_insurance_product_id = ?
+//          AND term = ?
+//          AND age = ?
+//          AND is_regular = ?
+//        """;
+//
+//        Double rate = jdbcTemplate.queryForObject(
+//                sql,
+//                Double.class,
+//                product,
+//                term,
+//                age,
+//                isRegular
+//        );
+//
+//        return rate != null ? rate : 0.0;
+//    }
+//
+//    @GetMapping("/ktn-CI-premium")
+//    public Map<String, Double> calculateCIPremium(
+//
+//            @RequestParam int product,
+//            @RequestParam int term,
+//            @RequestParam int age,
+//            @RequestParam String isRegular,
+//            @RequestParam double sumAssured) {
+//
+//        // ================= CI RATE =================
+//        String sql = """
+//        SELECT rate
+//        FROM critical_illness_rate
+//        WHERE life_insurance_product_id = ?
+//          AND term = ?
+//          AND age = ?
+//          AND is_regular = ?
+//        """;
+//
+//        Double rate = jdbcTemplate.queryForObject(
+//                sql,
+//                Double.class,
+//                product,
+//                term,
+//                age,
+//                isRegular);
+//
+//        if (rate == null) {
+//            rate = 0.0;
+//        }
+//
+//        // ================= CI COVERAGE =================
+//        double fiftyPercentSA = sumAssured * 0.50;
+//        double ciCoverage = Math.min(fiftyPercentSA, 2_000_000);
+//
+//        // ================= CI PREMIUM =================
+//        BigDecimal ciPremium =
+//                BigDecimal.valueOf(rate)
+//                        .multiply(BigDecimal.valueOf(ciCoverage))
+//                        .divide(BigDecimal.valueOf(1000), 2, RoundingMode.DOWN);
+//
+//        // ================= RESPONSE =================
+//        Map<String, Double> response = new HashMap<>();
+//        response.put("rate", rate);
+//        response.put("ciCoverage", ciCoverage);
+//        response.put("ciPremium", ciPremium.doubleValue());
+//
+//        return response;
+//    }
 
     @GetMapping("/ktn-premium")
     public Map<String, Double> calculateKtnPremium(
@@ -936,7 +966,6 @@ public class PhoMOController {
         response.put("baseRate", baseRate.doubleValue());
         response.put("staffAgentRebate", staffAgentRebate.doubleValue());
         response.put("adjustedRate", adjustedRate.doubleValue());
-
         response.put("basePremium", basePremium.doubleValue());
         response.put("occupationPremium", occupationPremium.doubleValue());
         response.put("totalPremium", totalPremium.doubleValue());

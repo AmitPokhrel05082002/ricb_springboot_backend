@@ -221,7 +221,7 @@ public class LifeInsuranceApi {
                                 "TO_DATE(?,'YYYY-MM-DD')," +
                                 "'Web'," +
                                 "?,?,?,?,?,?,?," +
-                                "?,?,?,?, '1', ?, " +
+                                "?,?,?, '1', ?, " +
                                 "'Web',SYSDATE,TO_CHAR(SYSDATE,'HH24:MI:SS'),'A')";
 
                 ps = conn.prepareStatement(insertQuery);
@@ -245,6 +245,7 @@ public class LifeInsuranceApi {
                 ps.setString(13, fileType);
                 ps.setString(14, objectPath);
 
+                System.out.println(insertQuery);
                 ps.executeUpdate();
 
                 ps.close();
