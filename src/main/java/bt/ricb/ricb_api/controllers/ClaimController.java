@@ -39,6 +39,7 @@ import java.util.Date;
 
 @RestController
 @RequestMapping("/claims")
+@CrossOrigin({ "*" })
 public class ClaimController {
 
     @Autowired
@@ -748,7 +749,7 @@ public class ClaimController {
                 }
             }
 
-            String apiUrl = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + cid.trim();
+            String apiUrl = "http://apps.ricb.bt/rliHouseholdDetails.php?cid=" + cid.trim();
 
             HttpURLConnection connHttp = (HttpURLConnection) new URL(apiUrl).openConnection();
             connHttp.setRequestMethod("GET");

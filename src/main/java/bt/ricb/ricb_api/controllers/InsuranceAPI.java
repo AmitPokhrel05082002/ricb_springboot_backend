@@ -43,6 +43,10 @@ public class InsuranceAPI {
 	@PostMapping({ "addNewUser" })
 	public ResponseEntity<HttpStatus> addUser(@RequestBody UserEntity user) {
 		try {
+			// Prevent duplicate registration by CID
+			if (user.getCid() != null && this.insuranceService.userExistsByCid(user.getCid().trim())) {
+				return ResponseEntity.status(HttpStatus.CONFLICT).body(HttpStatus.CONFLICT);
+			}
 			this.insuranceService.addUser(user);
 			return ResponseEntity.ok(HttpStatus.CREATED);
 		} catch (Exception e) {

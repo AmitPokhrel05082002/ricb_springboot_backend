@@ -255,6 +255,15 @@ public class InsuranceService {
 	    return response;
 	}
 
+	public boolean userExistsByCid(String cid) {
+		try {
+			return this.userRepo.existsByCid(cid);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return false;
+		}
+	}
+
 	public void addUser(UserEntity user) {
 		try {
 			this.userRepo.save(user);
