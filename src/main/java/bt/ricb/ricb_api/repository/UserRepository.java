@@ -32,6 +32,8 @@ public interface UserRepository extends JpaRepository<UserEntity, String> {
 	@Query(value = "SELECT IF(COUNT(*) = 0, 0, 1) existStatus, STATUS FROM apps_users WHERE cid=:cidNo AND mobile=:mobileNo\r\n", nativeQuery = true)
 	List<Tuple> checkUserDetails(@Param("cidNo") String paramString1, @Param("mobileNo") String paramString2);
 
+	Boolean existsByCid(String cid);
+
 	Boolean existsByCidAndMobile(String paramString1, String paramString2);
 
 	UserEntity getByCidAndMobile(String paramString1, String paramString2);

@@ -20,6 +20,8 @@ import java.util.Properties;
 import jakarta.mail.PasswordAuthentication;
 import jakarta.mail.Session;
 
+import static org.bouncycastle.cms.RecipientId.password;
+
 @Repository
 public class ricbDAO {
 
@@ -277,7 +279,15 @@ public class ricbDAO {
 	private static final String CHECK_USER_DETAILS = "SELECT count(*) userExist, status FROM apps_users WHERE cid=? and mobile=?";
 
 
-	private static final String CHECK_PASSWORD = "SELECT count(*) savedPassword FROM apps_users WHERE password=? and cid=? and status=1";
+    private static final String CHECK_PASSWORD = "SELECT count(*) savedPassword \n" +
+            "FROM apps_users \n" +
+            "WHERE cid=? \n" +
+            "AND password=? \n" +
+            "AND status=1";
+
+	private static final String CHECK_PASSWORD_NDI = "SELECT count(*) savedPassword FROM apps_users WHERE cid=? and status=1";
+
+	private static final String CHECK_USER_EXISTS = "SELECT count(*) userCount FROM apps_users WHERE cid=?";
 
 	private static final String GET_CREDIT_ACCOUNT = "http://183.82.97.1:91/ricb_dev_orl/ServiceIntegration/eFIMOIntegration.asmx/GetCollectionData_JSON?loanaccountnumber=?";
 
@@ -1348,8 +1358,8 @@ private static final String GET_OTIP_CUSTOMER = ""
 	        conn = mySQLDataSource.getConnection();
 	        if (conn != null) {
 	            pst = conn.prepareStatement(CHECK_PASSWORD);
-	            pst.setString(1, password);
-	            pst.setString(2, cid);
+	            pst.setString(1, cid);
+	            pst.setString(2, password);
 	            rs = pst.executeQuery();
 	            
 	            if (rs.next()) {
@@ -1386,6 +1396,77 @@ private static final String GET_OTIP_CUSTOMER = ""
 	    
 	    return json;
 	}
+
+    public JSONArray NdivalidatePassword(String cid) throws Exception {
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+        JSONArray json = new JSONArray();
+        JSONObject jsonObject = new JSONObject();
+
+        try {
+            conn = mySQLDataSource.getConnection();
+            if (conn != null) {
+                pst = conn.prepareStatement(CHECK_PASSWORD_NDI);
+                pst.setString(1, cid);
+                rs = pst.executeQuery();
+
+                if (rs.next()) {
+                    int passwordCount = rs.getInt("savedPassword");
+                    if (passwordCount > 0) {
+                        // Password matched
+                        jsonObject.put("status", "1");
+                        jsonObject.put("message", "Password validated successfully");
+                    } else {
+                        // Password unmatched
+                        jsonObject.put("status", "0");
+                        jsonObject.put("message", "Invalid credentials");
+                    }
+                } else {
+                    // No result found
+                    jsonObject.put("status", "0");
+                    jsonObject.put("message", "User not found");
+                }
+                json.put(jsonObject);
+            } else {
+                jsonObject.put("status", "0");
+                jsonObject.put("message", "Database connection failed");
+                json.put(jsonObject);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Return error status instead of empty array
+            jsonObject.put("status", "0");
+            jsonObject.put("message", "Validation failed");
+            json.put(jsonObject);
+        } finally {
+            ConnectionManager.close(conn, rs, pst);
+        }
+
+        return json;
+    }
+
+    public boolean checkUserExists(String cid) throws Exception {
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+        try {
+            conn = mySQLDataSource.getConnection();
+            if (conn != null) {
+                pst = conn.prepareStatement(CHECK_USER_EXISTS);
+                pst.setString(1, cid);
+                rs = pst.executeQuery();
+                if (rs.next()) {
+                    return rs.getInt("userCount") > 0;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            ConnectionManager.close(conn, rs, pst);
+        }
+        return false;
+    }
 
 	public JSONArray getCreditDetails(String accountNo) throws Exception
 	{
