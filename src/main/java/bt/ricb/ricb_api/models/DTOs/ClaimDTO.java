@@ -11,6 +11,7 @@ public class ClaimDTO {
     private String deathType;   // Natural, Accidental, Suicide
     private String causeOfDeath;
     private String nearestBranchId;
+    private LocalDate createdAt;
 
     // Getters and Setters
     public String getClaimType() { return claimType; }
@@ -33,4 +34,8 @@ public class ClaimDTO {
 
     public String getNearestBranchId() { return nearestBranchId; }
     public void setNearestBranchId(String nearestBranchId) { this.nearestBranchId = nearestBranchId; }
+
+    public LocalDate getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDate createdAt) { this.createdAt = createdAt; }
+
 }

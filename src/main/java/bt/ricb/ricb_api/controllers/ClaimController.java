@@ -6,6 +6,7 @@ import bt.ricb.ricb_api.models.ClaimEntity;
 import bt.ricb.ricb_api.models.DTOs.*;
 import bt.ricb.ricb_api.models.RliCollectionDateEntity;
 import bt.ricb.ricb_api.repository.AgencyUserRepository;
+import bt.ricb.ricb_api.repository.PolicyHolderRepository;
 import bt.ricb.ricb_api.repository.PolicyRepository;
 import bt.ricb.ricb_api.repository.RliCollectionDateRepository;
 import bt.ricb.ricb_api.services.ClaimService;
@@ -52,6 +53,8 @@ public class ClaimController {
     private AgencyUserRepository userRepo;
     @Autowired
     private RliCollectionDateRepository configRepository;
+    @Autowired
+    private PolicyHolderRepository policyHolderRepository;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> submitClaim(
@@ -253,13 +256,14 @@ public class ClaimController {
 
         try {
 
-            // ================= USER (FIXED) =================
+            // ================= USER =================
             String username = authentication.getName();
 
             AgencyUserEntity user = userRepo.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            String actionedBy = String.valueOf(user.getId()); // FIXED
+            String actionedBy = String.valueOf(user.getId());
+
 
             // ================= DTO =================
             ObjectMapper mapper = new ObjectMapper();
@@ -272,15 +276,20 @@ public class ClaimController {
                 ));
             }
 
-            // ================= GET CLAIM DATA =================
+
+            // ================= CLAIM DATA =================
             ClaimResponseDRO fullClaim = claimService.getFullClaimByCin(dto.getCin());
 
             ClaimDTO claim = fullClaim.getClaim();
             ClaimantDTO claimant = fullClaim.getClaimant();
+            PolicyHolderDTO policyHolder = fullClaim.getPolicyHolder();
 
-            List<PolicyDTO> policies = fullClaim.getPolicies().stream()
+
+            List<PolicyDTO> policies = fullClaim.getPolicies()
+                    .stream()
                     .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
                     .toList();
+
 
             if (policies.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of(
@@ -289,40 +298,54 @@ public class ClaimController {
                 ));
             }
 
-            // ================= ORACLE CONNECTION =================
+
+            // ================= DB CONNECTION =================
             conn = ConnectionManager.getOracleConnectionforims();
             conn.setAutoCommit(false);
 
+
+
+            // ================= SQL =================
             String insertQuery = """
-                        INSERT INTO ricb_li.tl_li_tr_claims_header
-                        ( serial_no, claim_type, policy_no, policy_serial_no,
-                          claim_intm_date, claim_intm_by, claim_intm_relation,
-                          date_of_death, place_of_death, who_was_died,
-                          type_of_death, mode_of_intimation,
-                          claim_regn_no, claim_regn_date, status_code,
-                          prepared_by, prepared_on, prepared_time,
-                          branch_code, risk_commencement,
-                          cause_of_death, deceased_name )
-                        VALUES
-                        ( ?, ?, ?, ?,
-                          TO_DATE(?, 'dd-mm-yyyy'), ?, ?,
-                          TO_DATE(?, 'dd-mm-yyyy'), ?, 'P',
-                          ?, 'W', '',
-                          TO_DATE(?, 'dd-mm-yyyy'), 'Z',
-                          'Web', TO_DATE(?, 'dd-mm-yyyy'), ?,
-                          ?, '',
-                          ?, ? )
-                    """;
+        INSERT INTO ricb_li.tl_li_tr_claims_header
+        (
+          serial_no,claim_type,policy_no,policy_serial_no,claim_intm_date,
+          claim_intm_by,claim_intm_relation,date_of_death,place_of_death,
+          who_was_died,type_of_death,mode_of_intimation, claim_regn_no,
+          claim_regn_date,status_code, prepared_by,prepared_on,prepared_time,
+          branch_code,risk_commencement, cause_of_death,deceased_name,
+          deceased_cid
+        )
+        VALUES
+        (
+          ?, ?, ?, ?,
+          ?, ?, ?,?, ?, ?,
+          ?, 'W', '',?, 'Z',
+          'Web', ?, ?,
+          ?, '',
+          ?, ?, ?
+        )
+        """;
+
 
             insertStmt = conn.prepareStatement(insertQuery);
 
+
             List<Long> serialNumbers = new ArrayList<>();
 
-            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
-            String time = LocalTime.now().format(DateTimeFormatter.ofPattern("HHmmss"));
+            LocalDate todayDate = LocalDate.now();
 
+            String time =
+                    LocalTime.now()
+                            .format(DateTimeFormatter.ofPattern("HHmmss"));
+
+
+
+            // ================= LOOP =================
             for (PolicyDTO policy : policies) {
 
+
+                // ================= SEQUENCE =================
                 seqStmt = conn.prepareStatement(
                         "SELECT ricb_li.sq_li_tr_claims_header.nextval FROM dual"
                 );
@@ -330,82 +353,70 @@ public class ClaimController {
                 rs = seqStmt.executeQuery();
 
                 long serialNo = rs.next() ? rs.getLong(1) : 0;
+
                 serialNumbers.add(serialNo);
 
+                // ================= INSERT =================
                 insertStmt.setLong(1, serialNo);
                 insertStmt.setString(2, claim.getClaimType());
                 insertStmt.setString(3, policy.getPolicyNumber());
                 insertStmt.setObject(4, policy.getPolicySerialNumber());
-
-                insertStmt.setString(5,
-                        policy.getIntimationDate().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
-                );
-
+                insertStmt.setObject(5, claim.getCreatedAt());
                 insertStmt.setString(6, claimant.getFullName());
                 insertStmt.setString(7, claimant.getRelation());
-
-                insertStmt.setString(8,
-                        claim.getDateOfDeath().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
-                );
-
+                insertStmt.setObject(8, claim.getDateOfDeath());
                 insertStmt.setString(9, claim.getPlaceOfDeath());
-                insertStmt.setString(10, claim.getDeathType());
+                String whoWasDied =
+                        ("DB".equalsIgnoreCase(claim.getClaimType()) ||
+                                "DBR".equalsIgnoreCase(claim.getClaimType()))
+                                ? "P"
+                                : "A";
+                insertStmt.setString(10, whoWasDied);
+                insertStmt.setString(11, claim.getDeathType());
+                insertStmt.setObject(12, todayDate);
+                insertStmt.setObject(13, todayDate);
+                insertStmt.setString(14, time);
+                insertStmt.setString(15, claim.getNearestBranchId());
+                insertStmt.setString(16, claim.getCauseOfDeath());
+                insertStmt.setString(17, policy.getPolicyHolderName());
 
-                insertStmt.setString(11, "");
-                insertStmt.setString(12, today);
-                insertStmt.setString(13, time);
-
-                insertStmt.setString(14, claim.getNearestBranchId());
-                insertStmt.setString(15, claim.getCauseOfDeath());
-                insertStmt.setString(16, policy.getPolicyHolderName());
-
+                // deceased CID
+                String deceasedCid =
+                        Optional.ofNullable(policyHolder)
+                                .map(PolicyHolderDTO::getCid)
+                                .orElse(null);
+                insertStmt.setString(18, deceasedCid);
                 insertStmt.executeUpdate();
-
                 rs.close();
                 seqStmt.close();
             }
-
             conn.commit();
 
             // ================= SERVICE CALL =================
             claimService.rejectPolicies(dto, file, actionedBy);
-
             return ResponseEntity.ok(Map.of(
                     "status", "SUCCESS",
                     "message", "Selected policies rejected successfully",
                     "serialNumbers", serialNumbers
             ));
-
         } catch (Exception e) {
-
             try {
-                if (conn != null) conn.rollback();
-            } catch (Exception ignored) {
-            }
+                if (conn != null) {
+                    conn.rollback();
+                }
+            } catch (Exception ignored) {}
 
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "status", "ERROR",
-                    "message", e.getMessage()
-            ));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "status", "ERROR",
+                            "message", e.getMessage()
+                    ));
 
         } finally {
-
-            try {
-                if (rs != null) rs.close();
-            } catch (Exception ignored) {
-            }
-            try {
-                if (seqStmt != null) seqStmt.close();
-            } catch (Exception ignored) {
-            }
-            try {
-                if (insertStmt != null) insertStmt.close();
-            } catch (Exception ignored) {
-            }
-            try {
-                if (conn != null) conn.close();
-            } catch (Exception ignored) {
-            }
+            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
+            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
+            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
         }
     }
 
@@ -423,7 +434,7 @@ public class ClaimController {
 
         try {
 
-            // ================= USER FIX =================
+            // ================= USER =================
             String username = authentication.getName();
 
             AgencyUserEntity user = userRepo.findByUsername(username)
@@ -447,6 +458,7 @@ public class ClaimController {
 
             ClaimDTO claim = fullClaim.getClaim();
             ClaimantDTO claimant = fullClaim.getClaimant();
+            PolicyHolderDTO policyHolder = fullClaim.getPolicyHolder();
 
             List<PolicyDTO> policies = fullClaim.getPolicies().stream()
                     .filter(p -> dto.getPolicyNumbers().contains(p.getPolicyNumber()))
@@ -463,27 +475,27 @@ public class ClaimController {
             conn = ConnectionManager.getOracleConnectionforims();
             conn.setAutoCommit(false);
 
-            // ================= SQL (NO TO_DATE) =================
+            // ================= SQL =================
             String insertQuery = """
-                        INSERT INTO ricb_li.tl_li_tr_claims_header
-                        ( serial_no, claim_type, policy_no, policy_serial_no,
-                          claim_intm_date, claim_intm_by, claim_intm_relation,
-                          date_of_death, place_of_death, who_was_died,
-                          type_of_death, mode_of_intimation,
-                          claim_regn_no, claim_regn_date, status_code,
-                          prepared_by, prepared_on, prepared_time,
-                          branch_code, risk_commencement,
-                          cause_of_death, deceased_name )
-                        VALUES
-                        ( ?, ?, ?, ?,
-                          ?, ?, ?,
-                          ?, ?, 'P',
-                          ?, 'W', '',
-                          ?, 'A',
-                          'Web', ?, ?,
-                          ?, '',
-                          ?, ? )
-                    """;
+            INSERT INTO ricb_li.tl_li_tr_claims_header
+            ( serial_no, claim_type, policy_no, policy_serial_no,
+              claim_intm_date, claim_intm_by, claim_intm_relation,
+              date_of_death, place_of_death, who_was_died,
+              type_of_death, mode_of_intimation,
+              claim_regn_no, claim_regn_date, status_code,
+              prepared_by, prepared_on, prepared_time,
+              branch_code, risk_commencement,
+              cause_of_death, deceased_name, deceased_cid )
+            VALUES
+            ( ?, ?, ?, ?,
+              ?, ?, ?,
+              ?, ?, ?,
+              ?, 'W', '',
+              ?, 'A',
+              'Web', ?, ?,
+              ?, '',
+              ?, ?, ? )
+        """;
 
             insertStmt = conn.prepareStatement(insertQuery);
 
@@ -504,28 +516,34 @@ public class ClaimController {
 
                 serialNumbers.add(serialNo);
 
-                // ================= SAFE DATE HANDLING =================
                 insertStmt.setLong(1, serialNo);
                 insertStmt.setString(2, claim.getClaimType());
                 insertStmt.setString(3, policy.getPolicyNumber());
                 insertStmt.setObject(4, policy.getPolicySerialNumber());
-
-                // ✔ FIXED (NO STRING FORMAT)
-                insertStmt.setObject(5, policy.getIntimationDate());
+                insertStmt.setObject(5, claim.getCreatedAt());
                 insertStmt.setString(6, claimant.getFullName());
                 insertStmt.setString(7, claimant.getRelation());
-
                 insertStmt.setObject(8, claim.getDateOfDeath());
                 insertStmt.setString(9, claim.getPlaceOfDeath());
-                insertStmt.setString(10, claim.getDeathType());
-
-                insertStmt.setString(11, "");
+                String whoWasDied =
+                        ("DB".equalsIgnoreCase(claim.getClaimType()) ||
+                                "DBR".equalsIgnoreCase(claim.getClaimType()))
+                                ? "P"
+                                : "A";
+                insertStmt.setString(10, whoWasDied);
+                insertStmt.setString(11, claim.getDeathType());
                 insertStmt.setObject(12, todayDate);
-                insertStmt.setString(13, time);
+                insertStmt.setObject(13, todayDate);
+                insertStmt.setString(14, time);
+                insertStmt.setString(15, claim.getNearestBranchId());
+                insertStmt.setString(16, claim.getCauseOfDeath());
+                insertStmt.setString(17, policy.getPolicyHolderName());
+                // ================= DECEASED CID (SAFE) =================
+                String deceasedCid = Optional.ofNullable(policyHolder)
+                        .map(PolicyHolderDTO::getCid)
+                        .orElse(null);
 
-                insertStmt.setString(14, claim.getNearestBranchId());
-                insertStmt.setString(15, claim.getCauseOfDeath());
-                insertStmt.setString(16, policy.getPolicyHolderName());
+                insertStmt.setString(18, deceasedCid);
 
                 insertStmt.executeUpdate();
 
@@ -548,8 +566,7 @@ public class ClaimController {
 
             try {
                 if (conn != null) conn.rollback();
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "status", "ERROR",
@@ -558,22 +575,10 @@ public class ClaimController {
 
         } finally {
 
-            try {
-                if (rs != null) rs.close();
-            } catch (Exception ignored) {
-            }
-            try {
-                if (seqStmt != null) seqStmt.close();
-            } catch (Exception ignored) {
-            }
-            try {
-                if (insertStmt != null) insertStmt.close();
-            } catch (Exception ignored) {
-            }
-            try {
-                if (conn != null) conn.close();
-            } catch (Exception ignored) {
-            }
+            try { if (rs != null) rs.close(); } catch (Exception ignored) {}
+            try { if (seqStmt != null) seqStmt.close(); } catch (Exception ignored) {}
+            try { if (insertStmt != null) insertStmt.close(); } catch (Exception ignored) {}
+            try { if (conn != null) conn.close(); } catch (Exception ignored) {}
         }
     }
 
@@ -955,7 +960,6 @@ public class ClaimController {
         }
     }
 
-
     @PostMapping("/getGroupPolicyDetails")
     public ResponseEntity<?> getGroupPolicyDetails(@RequestParam("cid") String cid,
                                                    @RequestParam("orgCode") String orgCode) {
@@ -966,6 +970,7 @@ public class ClaimController {
 
         try {
 
+            // ================= VALIDATION =================
             if (cid == null || cid.trim().isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Collections.singletonMap("error", "cid parameter is required"));
@@ -976,6 +981,7 @@ public class ClaimController {
                         .body(Collections.singletonMap("error", "orgCode parameter is required"));
             }
 
+            // ================= DB CONNECTION =================
             conn = ConnectionManager.getOracleConnectionforims();
 
             if (conn == null) {
@@ -983,30 +989,31 @@ public class ClaimController {
                         .body(Collections.singletonMap("error", "Database connection failed"));
             }
 
+            // ================= MAIN QUERY =================
             String policyQuery =
                     "SELECT * FROM V_CLAIMS_GROUP_LI_POLICIES " +
                             "WHERE CID = ? AND ORG_CODE = ?";
 
             policyPst = conn.prepareStatement(policyQuery);
-
             policyPst.setString(1, cid.trim());
             policyPst.setString(2, orgCode.trim());
 
             policyRs = policyPst.executeQuery();
 
             JSONArray resultArray = new JSONArray();
-            List<String> existingPolicies = new ArrayList<>();
+            List<String> existingCids = new ArrayList<>();
 
             ResultSetMetaData metaData = policyRs.getMetaData();
             int columnCount = metaData.getColumnCount();
 
+            // ================= LOOP RESULT =================
             while (policyRs.next()) {
 
-                String policyNo = policyRs.getString("POLICY_NO");
+                String policyCid = policyRs.getString("CID");
 
-
-                if (policyRepository.existsByPolicyNumber(policyNo)) {
-                    existingPolicies.add(policyNo);
+                // ================= CID CHECK USING JPA (FIXED) =================
+                if (policyHolderRepository.findByCid(policyCid).isPresent()) {
+                    existingCids.add(policyCid);
                     continue;
                 }
 
@@ -1015,18 +1022,18 @@ public class ClaimController {
                 for (int i = 1; i <= columnCount; i++) {
                     String columnName = metaData.getColumnName(i);
                     Object value = policyRs.getObject(i);
-
                     obj.put(columnName, value);
                 }
 
                 resultArray.put(obj);
             }
 
-            if (resultArray.length() == 0 && !existingPolicies.isEmpty()) {
+            // ================= RESPONSE HANDLING =================
+            if (resultArray.length() == 0 && !existingCids.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(Collections.singletonMap(
                                 "message",
-                                "Claim has already been processed for the provided details. Contact 1818 for clarification."
+                                "Claim has already been processed for the provided CID. Contact 1818 for clarification."
                         ));
             }
 
@@ -1034,33 +1041,23 @@ public class ClaimController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Collections.singletonMap(
                                 "message",
-                                "Claimable policies were not found for the provided details."
+                                "Claimable policies were not found for the provided CID and orgCode."
                         ));
             }
+
             return ResponseEntity.ok(resultArray.toString());
 
         } catch (SQLException e) {
-
             e.printStackTrace();
-
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Collections.singletonMap(
-                            "error",
-                            "Database error occurred"
-                    ));
+                    .body(Collections.singletonMap("error", "Database error occurred"));
 
         } catch (Exception e) {
-
             e.printStackTrace();
-
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Collections.singletonMap(
-                            "error",
-                            "Server error occurred"
-                    ));
+                    .body(Collections.singletonMap("error", "Server error occurred"));
 
         } finally {
-
             try {
                 if (policyRs != null) policyRs.close();
                 if (policyPst != null) policyPst.close();

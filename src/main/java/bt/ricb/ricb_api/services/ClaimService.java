@@ -178,46 +178,46 @@ public class ClaimService {
         policyHolderRepo.save(policyHolder);
 
         // ================= Policies =================
-        List<PolicyDTO> policyDTOList = dto.getPolicies();
-        List<String> duplicatePolicies = new ArrayList<>();
+//        List<PolicyDTO> policyDTOList = dto.getPolicies();
+//        List<String> duplicatePolicies = new ArrayList<>();
+//
+//        if (policyDTOList != null && !policyDTOList.isEmpty()) {
+//            List<PolicyEntity> policiesToInsert = new ArrayList<>();
+//
+//            for (PolicyDTO policyDTO : policyDTOList) {
+//
+//                // Check if policy number already exists
+//                boolean exists = policyRepo.existsByPolicyNumber(policyDTO.getPolicyNumber());
+//                if (exists) {
+//                    duplicatePolicies.add(policyDTO.getPolicyNumber());
+//                    continue; // skip this policy
+//                }
+//
+//                PolicyEntity policy = new PolicyEntity();
+//                policy.setPolicyHolderId(policyHolder.getId());
+//                policy.setPolicyHolderName(policyDTO.getPolicyHolderName());
+//                policy.setPolicyNumber(policyDTO.getPolicyNumber());
+//                policy.setPolicySerialNumber(policyDTO.getPolicySerialNumber());
+//                policy.setIntimationDate(policyDTO.getIntimationDate());
+//                policy.setNomineeName(policyDTO.getNomineeName());
+//                policy.setSumAssured(policyDTO.getSumAssured());
+//                policy.setBranchCode(policyDTO.getBranchCode());
+//                policy.setStatus(policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active");
+//                policy.setClaimStatus("Pending");
+//                policy.setCreatedAt(LocalDateTime.now());
+//
+//                policiesToInsert.add(policy);
+//            }
+//
+//            if (!policiesToInsert.isEmpty()) {
+//                policyRepo.saveAll(policiesToInsert);
+//            }
+//        }
 
-        if (policyDTOList != null && !policyDTOList.isEmpty()) {
-            List<PolicyEntity> policiesToInsert = new ArrayList<>();
-
-            for (PolicyDTO policyDTO : policyDTOList) {
-
-                // Check if policy number already exists
-                boolean exists = policyRepo.existsByPolicyNumber(policyDTO.getPolicyNumber());
-                if (exists) {
-                    duplicatePolicies.add(policyDTO.getPolicyNumber());
-                    continue; // skip this policy
-                }
-
-                PolicyEntity policy = new PolicyEntity();
-                policy.setPolicyHolderId(policyHolder.getId());
-                policy.setPolicyHolderName(policyDTO.getPolicyHolderName());
-                policy.setPolicyNumber(policyDTO.getPolicyNumber());
-                policy.setPolicySerialNumber(policyDTO.getPolicySerialNumber());
-                policy.setIntimationDate(policyDTO.getIntimationDate());
-                policy.setNomineeName(policyDTO.getNomineeName());
-                policy.setSumAssured(policyDTO.getSumAssured());
-                policy.setBranchCode(policyDTO.getBranchCode());
-                policy.setStatus(policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active");
-                policy.setClaimStatus("Pending");
-                policy.setCreatedAt(LocalDateTime.now());
-
-                policiesToInsert.add(policy);
-            }
-
-            if (!policiesToInsert.isEmpty()) {
-                policyRepo.saveAll(policiesToInsert);
-            }
-        }
-
-// If any duplicates found, throw an exception or return in response
-        if (!duplicatePolicies.isEmpty()) {
-            throw new RuntimeException("Policy already exists: " + String.join(", ", duplicatePolicies));
-        }
+//// If any duplicates found, throw an exception or return in response
+//        if (!duplicatePolicies.isEmpty()) {
+//            throw new RuntimeException("Policy already exists: " + String.join(", ", duplicatePolicies));
+//        }
 
 
         // ================= Payee =================
@@ -499,6 +499,11 @@ public class ClaimService {
         claimDTO.setPlaceOfDeath(claim.getPlaceOfDeath());
         claimDTO.setDeathType(claim.getDeathType());
         claimDTO.setCauseOfDeath(claim.getCauseOfDeath());
+        claimDTO.setCreatedAt(
+                claim.getCreatedAt() != null
+                        ? claim.getCreatedAt().toLocalDate()
+                        : null
+        );
 
         // Build Response
         ClaimResponseDRO response = new ClaimResponseDRO();

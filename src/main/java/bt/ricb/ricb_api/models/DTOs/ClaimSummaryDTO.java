@@ -12,7 +12,6 @@ public class ClaimSummaryDTO {
     private String remarks;
     private String nearestBranchId;
     private String claimType;
-
     private LocalDateTime createdAt;
 
     // Getters and Setters
