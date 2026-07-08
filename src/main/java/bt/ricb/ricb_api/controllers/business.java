@@ -180,18 +180,41 @@ public class business {
 		}
 	}
 
+	@GetMapping("/checkUserExists")
+	public ResponseEntity<?> checkUserExists(@RequestParam(required = false) String cidNo) {
+	    try {
+	        if (cidNo == null || cidNo.trim().isEmpty()) {
+	            return ResponseEntity.badRequest().body("Error: CID number is required.");
+	        }
+	        boolean exists = ricbDAO.checkUserExists(cidNo.trim());
+	        JSONObject result = new JSONObject();
+	        result.put("exists", exists);
+	        return ResponseEntity.ok(result.toString());
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return ResponseEntity.internalServerError().body("Server was not able to process your request");
+	    }
+	}
+
 	@GetMapping("/validatePassword")
 	public ResponseEntity<?> validatePassword(@RequestParam(required = false) String cidNo,
 	        @RequestParam(required = false) String password) {
 	    try {
-	        // Validate both parameters
 	        if (cidNo == null || cidNo.trim().isEmpty()) {
 	            return ResponseEntity.badRequest().body("Error: please enter CID number.");
 	        }
 	        if (password == null || password.trim().isEmpty()) {
-	            return ResponseEntity.badRequest().body("Error: please enter password.");
+	            return ResponseEntity.badRequest().body("Error: please enter PIN.");
 	        }
-	        
+	        // Enforce 4-digit numeric PIN
+	        if (!password.trim().matches("\\d{4}")) {
+	            JSONArray json = new JSONArray();
+	            JSONObject obj = new JSONObject();
+	            obj.put("status", "0");
+	            obj.put("message", "Invalid PIN format");
+	            json.put(obj);
+	            return ResponseEntity.ok(json.toString());
+	        }
 	        JSONArray json = ricbDAO.validatePassword(cidNo.trim(), password);
 	        return ResponseEntity.ok(json.toString());
 	    } catch (Exception e) {
@@ -199,6 +222,22 @@ public class business {
 	        return ResponseEntity.internalServerError().body("Server was not able to process your request");
 	    }
 	}
+
+    @GetMapping("/ndi-validatePassword")
+    public ResponseEntity<?> NdivalidatePassword(@RequestParam(required = false) String cidNo) {
+        try {
+            // Validate both parameters
+            if (cidNo == null || cidNo.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("Error: please enter CID number.");
+            }
+
+            JSONArray json = ricbDAO.NdivalidatePassword(cidNo.trim());
+            return ResponseEntity.ok(json.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("Server was not able to process your request");
+        }
+    }
 
 	@GetMapping("/creditinvestment1")
 	public ResponseEntity<?> creditinvestment(@RequestParam(required = false) String cidNo) {
