@@ -178,47 +178,45 @@ public class ClaimService {
         policyHolderRepo.save(policyHolder);
 
         // ================= Policies =================
-//        List<PolicyDTO> policyDTOList = dto.getPolicies();
-//        List<String> duplicatePolicies = new ArrayList<>();
-//
-//        if (policyDTOList != null && !policyDTOList.isEmpty()) {
-//            List<PolicyEntity> policiesToInsert = new ArrayList<>();
-//
-//            for (PolicyDTO policyDTO : policyDTOList) {
-//
-//                // Check if policy number already exists
-//                boolean exists = policyRepo.existsByPolicyNumber(policyDTO.getPolicyNumber());
-//                if (exists) {
-//                    duplicatePolicies.add(policyDTO.getPolicyNumber());
-//                    continue; // skip this policy
-//                }
-//
-//                PolicyEntity policy = new PolicyEntity();
-//                policy.setPolicyHolderId(policyHolder.getId());
-//                policy.setPolicyHolderName(policyDTO.getPolicyHolderName());
-//                policy.setPolicyNumber(policyDTO.getPolicyNumber());
-//                policy.setPolicySerialNumber(policyDTO.getPolicySerialNumber());
-//                policy.setIntimationDate(policyDTO.getIntimationDate());
-//                policy.setNomineeName(policyDTO.getNomineeName());
-//                policy.setSumAssured(policyDTO.getSumAssured());
-//                policy.setBranchCode(policyDTO.getBranchCode());
-//                policy.setStatus(policyDTO.getStatus() != null ? policyDTO.getStatus() : "Active");
-//                policy.setClaimStatus("Pending");
-//                policy.setCreatedAt(LocalDateTime.now());
-//
-//                policiesToInsert.add(policy);
-//            }
-//
-//            if (!policiesToInsert.isEmpty()) {
-//                policyRepo.saveAll(policiesToInsert);
-//            }
-//        }
+        List<PolicyDTO> policyDTOList = dto.getPolicies();
 
-//// If any duplicates found, throw an exception or return in response
-//        if (!duplicatePolicies.isEmpty()) {
-//            throw new RuntimeException("Policy already exists: " + String.join(", ", duplicatePolicies));
-//        }
+        if (policyDTOList != null && !policyDTOList.isEmpty()) {
 
+            List<PolicyEntity> policiesToInsert = new ArrayList<>();
+
+            for (PolicyDTO policyDTO : policyDTOList) {
+
+                PolicyEntity policy = new PolicyEntity();
+
+                // Relationship with policy holder
+                policy.setPolicyHolderId(policyHolder.getId());
+
+                // Policy details
+                policy.setPolicyHolderName(policyDTO.getPolicyHolderName());
+                policy.setPolicyNumber(policyDTO.getPolicyNumber());
+                policy.setPolicySerialNumber(policyDTO.getPolicySerialNumber());
+                policy.setIntimationDate(policyDTO.getIntimationDate());
+                policy.setNomineeName(policyDTO.getNomineeName());
+                policy.setSumAssured(policyDTO.getSumAssured());
+                policy.setBranchCode(policyDTO.getBranchCode());
+
+                // Default values
+                policy.setStatus(
+                        policyDTO.getStatus() != null
+                                ? policyDTO.getStatus()
+                                : "Active"
+                );
+
+                policy.setClaimStatus("Pending");
+
+                // Audit fields
+                policy.setCreatedAt(LocalDateTime.now());
+                policy.setUpdatedAt(LocalDateTime.now());
+
+                policiesToInsert.add(policy);
+            }
+            policyRepo.saveAll(policiesToInsert);
+        }
 
         // ================= Payee =================
         PayeeDTO payeeDTO = dto.getPayee();

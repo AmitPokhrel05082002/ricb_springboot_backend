@@ -915,7 +915,7 @@ public class ClaimController {
             for (Map<String, Object> policy : filteredPolicies) {
                 String policyNo = (String) policy.get("POLICY_NO");
 
-                if (policyRepository.existsByPolicyNumber(policyNo)) {
+                if (policyRepository.existsByCidAndPolicyNumber(cid, policyNo) > 0) {
                     existingPolicies.add(policyNo);
                 } else {
                     policyList.add(policy);
@@ -1011,8 +1011,15 @@ public class ClaimController {
                 String policyCid = policyRs.getString("CID");
 
                 // ================= CID CHECK USING JPA (FIXED) =================
-                if (policyHolderRepository.findByCid(policyCid).isPresent()) {
-                    existingCids.add(policyCid);
+                String policyNumber = policyRs.getString("POLICY_NO");
+
+                long exists = policyRepository.existsByCidAndPolicyNumber(
+                        policyCid,
+                        policyNumber
+                );
+
+                if (exists > 0) {
+                    existingCids.add(policyCid + "-" + policyNumber);
                     continue;
                 }
 
