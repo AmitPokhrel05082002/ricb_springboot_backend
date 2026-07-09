@@ -961,7 +961,7 @@ public class ClaimController {
     }
 
     @PostMapping("/getGroupPolicyDetails")
-    public ResponseEntity<?> getGroupPolicyDetails(@RequestParam("cid") String cid,
+    public ResponseEntity<?> getzPolicyDetails(@RequestParam("cid") String cid,
                                                    @RequestParam("orgCode") String orgCode) {
 
         Connection conn = null;
@@ -1115,7 +1115,7 @@ public class ClaimController {
                     .format(DateTimeFormatter.ofPattern("HH:mm:ss"));
 
             // ================= API CALL =================
-            String url = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + dto.getCitizenId();
+            String url = "http://apps.ricb.bt/rliHouseholdDetails.php?cid=" + dto.getCitizenId();
 
             RestTemplate restTemplate = new RestTemplate();
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
