@@ -23,4 +23,30 @@ public interface PolicyRepository extends JpaRepository<PolicyEntity, Integer> {
         """, nativeQuery = true)
     long existsByCidAndPolicyNumber(@Param("cid") String cid,
                                     @Param("policyNo") String policyNo);
+
+    // Global counts
+    Long countByClaimStatus(String claimStatus);
+
+    // Count all policies for a branch using claims table
+    @Query(value = """
+        SELECT COUNT(DISTINCT p.id)
+        FROM claims c
+        JOIN policies p
+            ON c.policy_holder_id = p.policy_holder_id
+        WHERE c.nearest_branch_id = :branchId
+        """, nativeQuery = true)
+    Long countByClaimBranch(@Param("branchId") String branchId);
+
+    // Count policies by claim status for a branch using claims table
+    @Query(value = """
+        SELECT COUNT(DISTINCT p.id)
+        FROM claims c
+        JOIN policies p
+            ON c.policy_holder_id = p.policy_holder_id
+        WHERE c.nearest_branch_id = :branchId
+          AND p.claim_status = :claimStatus
+        """, nativeQuery = true)
+    Long countByClaimStatusAndClaimBranch(
+            @Param("claimStatus") String claimStatus,
+            @Param("branchId") String branchId);
 }
