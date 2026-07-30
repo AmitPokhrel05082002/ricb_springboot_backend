@@ -2,6 +2,8 @@ package bt.ricb.ricb_api.controllers;
 
 import bt.ricb.ricb_api.config.ConnectionManager;
 import bt.ricb.ricb_api.dao.LifeInsuranceDao;
+import bt.ricb.ricb_api.models.DTOs.PolicyIssuedSmsRequest;
+import bt.ricb.ricb_api.models.DTOs.UnderwritingEmailRequest;
 import bt.ricb.ricb_api.models.FamilyDetailsDto;
 import bt.ricb.ricb_api.models.LifeInsuranceMainDto;
 import bt.ricb.ricb_api.models.NomineeDto;
@@ -9,7 +11,11 @@ import bt.ricb.ricb_api.models.PolicyCoverDto;
 import bt.ricb.ricb_api.models.PolicyDiscountLoadDTO;
 import bt.ricb.ricb_api.models.PolicyDto;
 import bt.ricb.ricb_api.models.PolicyPremiumDto;
+import bt.ricb.ricb_api.repository.UnderwritingOfficerRepository;
+import bt.ricb.ricb_api.services.ApiService;
+import bt.ricb.ricb_api.services.EmailService;
 import bt.ricb.ricb_api.services.MinioService;
+import jakarta.mail.MessagingException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -18,7 +24,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-
+import bt.ricb.ricb_api.models.UnderwritingOfficerEntity;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Connection;
@@ -39,6 +46,12 @@ public class LifeInsuranceApi {
     private final MinioService minioService;
     private final LifeInsuranceDao lifeInsuarance;
     private final RestTemplate restTemplate;
+    @Autowired
+    private EmailService emailService;
+    @Autowired
+    private ApiService apiService;
+    @Autowired
+    private UnderwritingOfficerRepository underwritingOfficerRepository;
 
     public LifeInsuranceApi(MinioService minioService,
                             LifeInsuranceDao lifeInsurance,
@@ -46,6 +59,140 @@ public class LifeInsuranceApi {
         this.minioService = minioService;
         this.lifeInsuarance = lifeInsurance;
         this.restTemplate = restTemplate;
+    }
+
+    @PostMapping("/underwriting-review")
+    public ResponseEntity<String> sendUnderwritingReviewEmail(
+            @RequestBody UnderwritingEmailRequest request) {
+
+        try {
+            UnderwritingOfficerEntity officer =
+                    underwritingOfficerRepository
+                            .findByBranchCode(request.getBranchCode())
+                            .orElseThrow(() ->
+                                    new RuntimeException(
+                                            "No underwriter found for branch code: "
+                                                    + request.getBranchCode()
+                                    )
+                            );
+
+
+            String underwriterEmail = officer.getEmail();
+
+            String underwriterSubject =
+                    "Life Insurance Proposal - Further Underwriting Review Required";
+
+
+            String underwriterBody =
+                    "Dear Branch Manager" + ",\n\n" +
+                            "The online proposal mentioned below requires further underwriting review " +
+                            "and has not been accepted online due to medical requirements or exceeding " +
+                            "the applicable threshold limit.\n\n" +
+
+                            "Proposal No.: " + request.getProposalNo() + "\n" +
+                            "Proposer Name: " + request.getProposerName() + "\n" +
+                            "Proposal CID No.: " + request.getCidNo() + "\n" +
+                            "Contact No.: " + request.getContactNo() + "\n" +
+                            "Proposal Date: " + request.getProposalDate() + "\n" +
+                            "Product: " + request.getProduct() + "\n" +
+                            "Reason: " + request.getReason() + "\n\n" +
+
+                            "Follow up with the client and arrange the required documents/medical " +
+                            "examinations to proceed further.\n\n" +
+
+                            "This is a system-generated notification. Please do not reply.\n\n";
+
+            emailService.sendEmail(
+                    underwriterEmail,
+                    underwriterSubject,
+                    underwriterBody,
+                    null
+            );
+
+            if (request.getEmailAddress() != null &&
+                    !request.getEmailAddress().isBlank()) {
+
+
+                String customerSubject =
+                        "Life Insurance Proposal - Further Assessment Required";
+
+
+                String customerBody =
+                        "Dear " + request.getProposerName() + ",\n\n" +
+                                "Your online life insurance proposal requires further assessment " +
+                                "before acceptance.\n\n" +
+                                "Our official will contact you soon for further requirements.\n\n" +
+                                "Thank you.\n\n";
+
+
+                emailService.sendEmail(
+                        request.getEmailAddress(),
+                        customerSubject,
+                        customerBody,
+                        null
+                );
+            }
+
+
+            return ResponseEntity.ok("Emails sent successfully.");
+
+
+        } catch (MessagingException | IOException e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to send emails: " + e.getMessage());
+
+
+        } catch (RuntimeException e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_REQUEST)
+                    .body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/policy-issued-sms")
+    public ResponseEntity<String> sendPolicyIssuedSms(
+            @RequestBody PolicyIssuedSmsRequest request) {
+
+        try {
+
+            String mobile = request.getMobileNumber();
+
+            if (mobile == null || mobile.isBlank()) {
+                return ResponseEntity.badRequest().body("Mobile number is required.");
+            }
+
+            String message =
+                    "Dear " + request.getName() +
+                            ", your online life insurance proposal is accepted and issued with Policy No. " +
+                            request.getPolicyNumber() +
+                            ". Thanks for choosing RICBL.";
+
+            if (mobile.startsWith("17")) {
+
+                apiService.sendSms(message, mobile);
+
+            } else if (mobile.startsWith("77")) {
+
+                apiService.sendSmsTcell(message, mobile);
+
+            } else {
+
+                return ResponseEntity.badRequest()
+                        .body("Unsupported mobile number.");
+            }
+
+            return ResponseEntity.ok("SMS sent successfully.");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to send SMS: " + e.getMessage());
+        }
     }
 
     @PostMapping({"/insuranceMainDetails"})
