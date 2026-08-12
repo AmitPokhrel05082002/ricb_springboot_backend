@@ -784,7 +784,7 @@ public class ClaimController {
                 }
             }
 
-            String apiUrl = "http://apps.ricb.bt/rliHouseholdDetails.php?cid=" + cid.trim();
+            String apiUrl = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + cid.trim();
 
             HttpURLConnection connHttp = (HttpURLConnection) new URL(apiUrl).openConnection();
             connHttp.setRequestMethod("GET");
@@ -885,13 +885,9 @@ public class ClaimController {
                 String collectionDateStr = rs.getString("COLLECTION_DATE");
 
                 if (dateOfDeath != null && collectionDateStr != null) {
-                    try {
-                        Date collectionDate = dbDateFormat.parse(collectionDateStr);
+                    Date collectionDate = dbDateFormat.parse(collectionDateStr);
 
-                        if (collectionDate.compareTo(dateOfDeath) >= 0) {
-                            continue;
-                        }
-                    } catch (ParseException e) {
+                    if (collectionDate.compareTo(dateOfDeath) > 0) {
                         continue;
                     }
                 }
@@ -1115,7 +1111,7 @@ public class ClaimController {
                     .format(DateTimeFormatter.ofPattern("HH:mm:ss"));
 
             // ================= API CALL =================
-            String url = "http://apps.ricb.bt/rliHouseholdDetails.php?cid=" + dto.getCitizenId();
+            String url = "https://apps.ricb.bt/rliHouseholdDetails.php?cid=" + dto.getCitizenId();
 
             RestTemplate restTemplate = new RestTemplate();
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
