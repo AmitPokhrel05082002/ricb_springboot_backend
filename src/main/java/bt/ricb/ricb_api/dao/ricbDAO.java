@@ -1,8 +1,10 @@
 package bt.ricb.ricb_api.dao;
 
+import bt.ricb.ricb_api.services.ApiService;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Repository;
 
 import bt.ricb.ricb_api.config.ConnectionManager;
@@ -10,13 +12,18 @@ import bt.ricb.ricb_api.util.EmailUtil;
 import bt.ricb.ricb_api.util.ToJSON;
 
 import javax.sql.DataSource;
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Timestamp;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Properties;
+import java.util.Random;
+import java.util.UUID;
+
 import jakarta.mail.PasswordAuthentication;
 import jakarta.mail.Session;
 
@@ -35,6 +42,10 @@ public class ricbDAO {
         this.mySQLDataSource = mySQLDataSource;
         this.emailUtil = emailUtil;
     }
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    @Autowired
+    private ApiService apiService;
     
     private static final String GET_ALL_FIRE_SF_DETAILS = ""
 			 + "select * from V_FIRE_SF_CURR_POLICY where PREVIOUS_POLICY_NO LIKE ? ";
@@ -278,12 +289,6 @@ public class ricbDAO {
 
 	private static final String CHECK_USER_DETAILS = "SELECT count(*) userExist, status FROM apps_users WHERE cid=? and mobile=?";
 
-
-    private static final String CHECK_PASSWORD = "SELECT count(*) savedPassword \n" +
-            "FROM apps_users \n" +
-            "WHERE cid=? \n" +
-            "AND password=? \n" +
-            "AND status=1";
 
 	private static final String CHECK_PASSWORD_NDI = "SELECT count(*) savedPassword FROM apps_users WHERE cid=? and status=1";
 
@@ -895,7 +900,9 @@ private static final String GET_OTIP_CUSTOMER = ""
 			+ "  AND ieog.isactiveee = '1'";
 
 
-	private static final String GET_USER_DETAILS = "SELECT * from apps_users where cid=?";
+	private static final String GET_USER_DETAILS = "SELECT gender, name, mobile, created_at, email, cid, status " +
+            "FROM apps_users " +
+            "WHERE cid = ?";
 
 
 	private static final String UPDATE_USER_STATUS = "UPDATE apps_users SET status=1 WHERE cid=?";
@@ -1347,55 +1354,88 @@ private static final String GET_OTIP_CUSTOMER = ""
 		return json;
 	}
 
-	public JSONArray validatePassword(String cid, String password) throws Exception {
-	    Connection conn = null;
-	    PreparedStatement pst = null;
-	    ResultSet rs = null;
-	    JSONArray json = new JSONArray();
-	    JSONObject jsonObject = new JSONObject();
-	    
-	    try {
-	        conn = mySQLDataSource.getConnection();
-	        if (conn != null) {
-	            pst = conn.prepareStatement(CHECK_PASSWORD);
-	            pst.setString(1, cid);
-	            pst.setString(2, password);
-	            rs = pst.executeQuery();
-	            
-	            if (rs.next()) {
-	                int passwordCount = rs.getInt("savedPassword");
-	                if (passwordCount > 0) {
-	                    // Password matched
-	                    jsonObject.put("status", "1");
-	                    jsonObject.put("message", "Password validated successfully");
-	                } else {
-	                    // Password unmatched
-	                    jsonObject.put("status", "0");
-	                    jsonObject.put("message", "Invalid credentials");
-	                }
-	            } else {
-	                // No result found
-	                jsonObject.put("status", "0");
-	                jsonObject.put("message", "User not found");
-	            }
-	            json.put(jsonObject);
-	        } else {
-	            jsonObject.put("status", "0");
-	            jsonObject.put("message", "Database connection failed");
-	            json.put(jsonObject);
-	        }
-	    } catch (Exception e) {
-	        e.printStackTrace();
-	        // Return error status instead of empty array
-	        jsonObject.put("status", "0");
-	        jsonObject.put("message", "Validation failed");
-	        json.put(jsonObject);
-	    } finally {
-	        ConnectionManager.close(conn, rs, pst);
-	    }
-	    
-	    return json;
-	}
+    public JSONArray validatePassword(String cid, String password) throws Exception {
+
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+
+        JSONArray json = new JSONArray();
+        JSONObject jsonObject = new JSONObject();
+
+        try {
+            conn = mySQLDataSource.getConnection();
+
+            String sql =
+                    "SELECT password " +
+                            "FROM apps_users " +
+                            "WHERE cid = ? " +
+                            "AND status = 1";
+
+            pst = conn.prepareStatement(sql);
+            pst.setString(1, cid);
+
+            rs = pst.executeQuery();
+
+            if (rs.next()) {
+
+                String storedPassword = rs.getString("password");
+
+                System.out.println("CID: " + cid);
+                System.out.println("Stored password: " + storedPassword);
+
+                boolean valid = passwordEncoder.matches(
+                        password,
+                        storedPassword
+                );
+
+                if (valid) {
+
+                    jsonObject.put("status", "1");
+                    jsonObject.put(
+                            "message",
+                            "Password validated successfully"
+                    );
+
+                } else {
+
+                    jsonObject.put("status", "0");
+                    jsonObject.put(
+                            "message",
+                            "Invalid credentials"
+                    );
+                }
+
+            } else {
+
+                jsonObject.put("status", "0");
+                jsonObject.put(
+                        "message",
+                        "Invalid credentials"
+                );
+            }
+
+            json.put(jsonObject);
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            jsonObject.put("status", "0");
+            jsonObject.put(
+                    "message",
+                    "Validation failed"
+            );
+
+            json.put(jsonObject);
+
+        } finally {
+
+            ConnectionManager.close(conn, rs, pst);
+        }
+
+        return json;
+    }
 
     public JSONArray NdivalidatePassword(String cid) throws Exception {
         Connection conn = null;
@@ -2526,57 +2566,599 @@ private static final String GET_OTIP_CUSTOMER = ""
 			}
 			
 			return json;
-		} 
-	    
-	    public JSONArray resetPin(String cidNo, String newPIN) throws Exception {
-	        Connection conn = null;
-	        PreparedStatement pst = null;
-	        ResultSet rs = null;
-	        JSONArray json = new JSONArray();
-	        ToJSON convertor = new ToJSON();
+		}
 
-	        try {
-	            conn = mySQLDataSource.getConnection();
-	            if (conn != null) {
-	                // Check if user exists
-	                String checkSql = "SELECT * FROM apps_users WHERE cid = ?";
-	                pst = conn.prepareStatement(checkSql);
-	                pst.setString(1, cidNo);
-	                rs = pst.executeQuery();
+    public JSONArray initiateForgotPin(String cidNo) throws Exception {
 
-	                if (rs.next()) {
-	                    // Update password (PIN)
-	                    String updateSql = "UPDATE apps_users SET password = ? WHERE cid = ?";
-	                    pst = conn.prepareStatement(updateSql);
-	                    pst.setString(1, newPIN);
-	                    pst.setString(2, cidNo);
-	                    int updated = pst.executeUpdate();
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
 
-	                    // Prepare a simple result dataset
-	                    String statusSql = "SELECT " + (updated > 0 ? "'1'" : "'0'") + " AS status";
-	                    pst = conn.prepareStatement(statusSql);
-	                    rs = pst.executeQuery();
+        JSONArray json = new JSONArray();
+        JSONObject response = new JSONObject();
 
-	                    json = convertor.toJSONArray(rs);
-	                } else {
-	                    // User not found
-	                    String notFoundSql = "SELECT '0' AS status";
-	                    pst = conn.prepareStatement(notFoundSql);
-	                    rs = pst.executeQuery();
-	                    json = convertor.toJSONArray(rs);
-	                }
-	            }
-	        } catch (Exception e) {
-	            e.printStackTrace();
-	            return json;
-	        } finally {
-	            ConnectionManager.close(conn, rs, pst);
-	        }
+        try {
 
-	        return json;
-	    }
+            conn = mySQLDataSource.getConnection();
 
+            // ==========================================
+            // FIND REGISTERED MOBILE
+            // ==========================================
 
+            String sql =
+                    "SELECT mobile " +
+                            "FROM apps_users " +
+                            "WHERE cid = ? " +
+                            "AND status = 1";
 
-	
+            pst = conn.prepareStatement(sql);
+            pst.setString(1, cidNo);
+
+            rs = pst.executeQuery();
+
+            if (!rs.next()) {
+
+                response.put("status", "0");
+                response.put("message", "Unable to process request");
+
+                json.put(response);
+                return json;
+            }
+
+            String mobile = rs.getString("mobile");
+
+            if (mobile == null || mobile.trim().isEmpty()) {
+
+                response.put("status", "0");
+                response.put("message", "No registered mobile number");
+
+                json.put(response);
+                return json;
+            }
+
+            mobile = mobile.trim();
+
+            // ==========================================
+            // CHECK MOBILE OPERATOR
+            // ==========================================
+
+            if (!mobile.startsWith("17") && !mobile.startsWith("77")) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Unable to send OTP to the registered mobile number"
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // ==========================================
+            // GENERATE 6 DIGIT OTP
+            // ==========================================
+
+            SecureRandom secureRandom = new SecureRandom();
+
+            String otp = String.format(
+                    "%06d",
+                    secureRandom.nextInt(1000000)
+            );
+
+            // ==========================================
+            // SEND OTP SMS FIRST
+            // ==========================================
+
+            String smsMessage =
+                    "Your RICB password reset OTP is "
+                            + otp
+                            + ". This OTP is valid for 5 minutes.";
+
+            try {
+
+                if (mobile.startsWith("17")) {
+
+                    apiService.sendSms(
+                            smsMessage,
+                            mobile
+                    );
+
+                } else {
+
+                    apiService.sendSmsTcell(
+                            smsMessage,
+                            mobile
+                    );
+                }
+
+            } catch (Exception smsException) {
+
+                // Log technical error on server
+                smsException.printStackTrace();
+
+                // DO NOT SAVE OTP
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Unable to send OTP at the moment. Please try again later."
+                );
+
+                json.put(response);
+
+                return json;
+            }
+
+            // ==========================================
+            // SMS SUCCESSFUL
+            // NOW HASH OTP
+            // ==========================================
+
+            String otpHash = passwordEncoder.encode(otp);
+
+            // ==========================================
+            // OTP EXPIRY - 5 MINUTES
+            // ==========================================
+
+            Timestamp expiry =
+                    new Timestamp(
+                            System.currentTimeMillis()
+                                    + (5 * 60 * 1000)
+                    );
+
+            // ==========================================
+            // CLOSE PREVIOUS STATEMENTS
+            // ==========================================
+
+            if (rs != null) {
+                rs.close();
+                rs = null;
+            }
+
+            if (pst != null) {
+                pst.close();
+                pst = null;
+            }
+
+            // ==========================================
+            // SAVE OTP ONLY AFTER SMS SUCCESS
+            // ==========================================
+
+            String insertSql =
+                    "INSERT INTO password_reset_otp " +
+                            "(cid, otp_hash, expires_at, verified, attempts) " +
+                            "VALUES (?, ?, ?, 0, 0)";
+
+            pst = conn.prepareStatement(insertSql);
+
+            pst.setString(1, cidNo);
+            pst.setString(2, otpHash);
+            pst.setTimestamp(3, expiry);
+
+            pst.executeUpdate();
+
+            // ==========================================
+            // SUCCESS RESPONSE
+            // ==========================================
+
+            response.put("status", "1");
+
+            response.put(
+                    "message",
+                    "OTP has been sent to your registered mobile number"
+            );
+
+            response.put(
+                    "mobile",
+                    "******" +
+                            mobile.substring(
+                                    Math.max(
+                                            0,
+                                            mobile.length() - 4
+                                    )
+                            )
+            );
+
+            json.put(response);
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            response.put("status", "0");
+            response.put(
+                    "message",
+                    "Unable to process your request at the moment"
+            );
+
+            json.put(response);
+
+        } finally {
+
+            ConnectionManager.close(
+                    conn,
+                    rs,
+                    pst
+            );
+        }
+
+        return json;
+    }
+
+    public JSONArray verifyResetOtp(String cidNo, String otp) throws Exception {
+
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+
+        JSONArray json = new JSONArray();
+        JSONObject response = new JSONObject();
+
+        try {
+
+            conn = mySQLDataSource.getConnection();
+
+            if (conn == null) {
+
+                response.put("status", "0");
+                response.put("message", "Database connection failed");
+
+                json.put(response);
+                return json;
+            }
+
+            // ==========================================================
+            // GET LATEST OTP
+            // ==========================================================
+
+            String sql =
+                    "SELECT id, otp_hash, expires_at, attempts " +
+                            "FROM password_reset_otp " +
+                            "WHERE cid = ? " +
+                            "AND verified = 0 " +
+                            "ORDER BY id DESC " +
+                            "LIMIT 1";
+
+            pst = conn.prepareStatement(sql);
+            pst.setString(1, cidNo);
+
+            rs = pst.executeQuery();
+
+            if (!rs.next()) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Invalid or expired OTP"
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            long otpId = rs.getLong("id");
+
+            String otpHash =
+                    rs.getString("otp_hash");
+
+            Timestamp expiresAt =
+                    rs.getTimestamp("expires_at");
+
+            int attempts =
+                    rs.getInt("attempts");
+
+            // ==========================================================
+            // CHECK ATTEMPTS
+            // ==========================================================
+
+            if (attempts >= 5) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Too many OTP attempts. Please request a new OTP."
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // ==========================================================
+            // CHECK EXPIRY
+            // ==========================================================
+
+            if (expiresAt == null ||
+                    expiresAt.before(
+                            new Timestamp(
+                                    System.currentTimeMillis()
+                            )
+                    )) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "OTP has expired. Please request a new OTP."
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // ==========================================================
+            // VERIFY OTP
+            // ==========================================================
+
+            boolean validOtp =
+                    passwordEncoder.matches(
+                            otp,
+                            otpHash
+                    );
+
+            if (!validOtp) {
+
+                String updateAttempts =
+                        "UPDATE password_reset_otp " +
+                                "SET attempts = attempts + 1 " +
+                                "WHERE id = ?";
+
+                try (PreparedStatement attemptPst =
+                             conn.prepareStatement(updateAttempts)) {
+
+                    attemptPst.setLong(1, otpId);
+                    attemptPst.executeUpdate();
+                }
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "OTP verification failed"
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // ==========================================================
+            // OTP VALID
+            // ==========================================================
+
+            String resetToken = UUID.randomUUID().toString();
+
+// Hash the reset token before storing
+            String resetTokenHash = passwordEncoder.encode(resetToken);
+
+// Reset token valid for 5 minutes
+            Timestamp resetTokenExpiry = new Timestamp(
+                    System.currentTimeMillis() + (5 * 60 * 1000)
+            );
+
+// ==========================================================
+// UPDATE VERIFIED + STORE RESET TOKEN
+// ==========================================================
+
+            String updateOtp =
+                    "UPDATE password_reset_otp " +
+                            "SET verified = 1, " +
+                            "reset_token_hash = ?, " +
+                            "reset_token_expires_at = ? " +
+                            "WHERE id = ?";
+
+            try (PreparedStatement updatePst =
+                         conn.prepareStatement(updateOtp)) {
+
+                updatePst.setString(1, resetTokenHash);
+                updatePst.setTimestamp(2, resetTokenExpiry);
+                updatePst.setLong(3, otpId);
+
+                int updated = updatePst.executeUpdate();
+
+                if (updated != 1) {
+                    throw new Exception("Failed to store reset token");
+                }
+            }
+
+// ==========================================================
+// RESPONSE
+// ==========================================================
+
+            response.put("status", "1");
+            response.put(
+                    "message",
+                    "OTP verified successfully"
+            );
+
+// Return RAW token to frontend
+            response.put("resetToken", resetToken);
+
+            response.put("expiresIn", 600);
+
+            json.put(response);
+
+        } finally {
+
+            ConnectionManager.close(
+                    conn,
+                    rs,
+                    pst
+            );
+        }
+
+        return json;
+    }
+
+    public JSONArray resetPin(String resetToken, String newPIN) throws Exception {
+
+        Connection conn = null;
+        PreparedStatement pst = null;
+        ResultSet rs = null;
+
+        JSONArray json = new JSONArray();
+        JSONObject response = new JSONObject();
+
+        try {
+
+            conn = mySQLDataSource.getConnection();
+
+            if (conn == null) {
+
+                response.put("status", "0");
+                response.put("message", "Database connection failed");
+
+                json.put(response);
+                return json;
+            }
+
+            // =====================================================
+            // FIND LATEST VERIFIED RESET TOKEN
+            // =====================================================
+
+            String sql =
+                    "SELECT id, cid, reset_token_hash, reset_token_expires_at " +
+                            "FROM password_reset_otp " +
+                            "WHERE verified = 1 " +
+                            "AND reset_token_hash IS NOT NULL " +
+                            "AND reset_token_expires_at > NOW() " +
+                            "ORDER BY id DESC";
+
+            pst = conn.prepareStatement(sql);
+            rs = pst.executeQuery();
+
+            Long otpId = null;
+            String cidNo = null;
+            String tokenHash = null;
+
+            // =====================================================
+            // FIND TOKEN USING BCRYPT
+            // =====================================================
+
+            while (rs.next()) {
+
+                String storedHash =
+                        rs.getString("reset_token_hash");
+
+                if (storedHash != null &&
+                        passwordEncoder.matches(
+                                resetToken,
+                                storedHash)) {
+
+                    otpId = rs.getLong("id");
+                    cidNo = rs.getString("cid");
+                    tokenHash = storedHash;
+
+                    break;
+                }
+            }
+
+            rs.close();
+            pst.close();
+
+            // =====================================================
+            // TOKEN NOT FOUND
+            // =====================================================
+
+            if (otpId == null || cidNo == null) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Invalid or expired reset token"
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // =====================================================
+            // HASH NEW PIN USING BCRYPT
+            // =====================================================
+
+            String hashedPassword =
+                    passwordEncoder.encode(newPIN);
+
+            // =====================================================
+            // UPDATE PIN
+            // =====================================================
+
+            String updateSql =
+                    "UPDATE apps_users " +
+                            "SET password = ? " +
+                            "WHERE cid = ? " +
+                            "AND status = 1";
+
+            pst = conn.prepareStatement(updateSql);
+
+            pst.setString(1, hashedPassword);
+            pst.setString(2, cidNo);
+
+            int updated = pst.executeUpdate();
+
+            pst.close();
+
+            // =====================================================
+            // INVALID USER
+            // =====================================================
+
+            if (updated == 0) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Unable to reset PIN"
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // =====================================================
+            // INVALIDATE RESET TOKEN
+            // =====================================================
+
+            String invalidateSql =
+                    "UPDATE password_reset_otp " +
+                            "SET reset_token_hash = NULL, " +
+                            "reset_token_expires_at = NULL " +
+                            "WHERE id = ?";
+
+            pst = conn.prepareStatement(invalidateSql);
+
+            pst.setLong(1, otpId);
+
+            pst.executeUpdate();
+
+            // =====================================================
+            // SUCCESS
+            // =====================================================
+
+            response.put("status", "1");
+            response.put(
+                    "message",
+                    "PIN reset successfully"
+            );
+
+            json.put(response);
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            response.put("status", "0");
+            response.put(
+                    "message",
+                    "Unable to reset PIN"
+            );
+
+            json.put(response);
+
+        } finally {
+
+            ConnectionManager.close(
+                    conn,
+                    rs,
+                    pst
+            );
+        }
+
+        return json;
+    }
 }

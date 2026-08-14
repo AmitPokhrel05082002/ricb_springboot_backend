@@ -33,30 +33,99 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader("Authorization");
 
-        // ================= NO TOKEN =================
-        // Allow request to continue.
-        // SecurityConfig will decide whether auth is required.
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        // ========================================================
+        // NO TOKEN
+        // ========================================================
+
+        if (authHeader == null ||
+                !authHeader.startsWith("Bearer ")) {
+
             filterChain.doFilter(request, response);
             return;
         }
 
         try {
 
-            String token = authHeader.substring(7);
+            String token = authHeader.substring(7).trim();
 
-            // ================= INVALID TOKEN =================
-            if (!jwtService.isValid(token)) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.getWriter().write("Invalid token");
+            // ====================================================
+            // INVALID TOKEN
+            // ====================================================
+
+            if (token.isEmpty() || !jwtService.isValid(token)) {
+
+                response.setStatus(
+                        HttpServletResponse.SC_UNAUTHORIZED
+                );
+
+                response.setContentType("application/json");
+
+                response.getWriter().write(
+                        "{\"status\":401,\"message\":\"Invalid or expired token\"}"
+                );
+
                 return;
             }
 
-            String username = jwtService.extractUsername(token);
-            String role = jwtService.extractRole(token);
+            // ====================================================
+            // EXTRACT USERNAME / CID
+            // ====================================================
 
-            List<SimpleGrantedAuthority> authorities =
-                    List.of(new SimpleGrantedAuthority("ROLE_" + role));
+            String username = jwtService.extractUsername(token);
+
+            // ====================================================
+            // DETERMINE TOKEN TYPE
+            // ====================================================
+
+            String tokenType = jwtService.extractTokenType(token);
+
+            List<SimpleGrantedAuthority> authorities;
+
+            // ====================================================
+            // MYRICB CUSTOMER TOKEN
+            // ====================================================
+
+            if ("CUSTOMER".equalsIgnoreCase(tokenType)) {
+
+                authorities = List.of(
+                        new SimpleGrantedAuthority("ROLE_CUSTOMER")
+                );
+
+            }
+
+            // ====================================================
+            // EXISTING CLAIMS TOKEN
+            // ====================================================
+
+            else {
+
+                String role = jwtService.extractRole(token);
+
+                if (role == null || role.isBlank()) {
+
+                    response.setStatus(
+                            HttpServletResponse.SC_UNAUTHORIZED
+                    );
+
+                    response.setContentType("application/json");
+
+                    response.getWriter().write(
+                            "{\"status\":401,\"message\":\"Invalid token role\"}"
+                    );
+
+                    return;
+                }
+
+                authorities = List.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_" + role
+                        )
+                );
+            }
+
+            // ====================================================
+            // CREATE AUTHENTICATION
+            // ====================================================
 
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(
@@ -66,15 +135,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     );
 
             authentication.setDetails(
-                    new WebAuthenticationDetailsSource().buildDetails(request)
+                    new WebAuthenticationDetailsSource()
+                            .buildDetails(request)
             );
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            SecurityContextHolder
+                    .getContext()
+                    .setAuthentication(authentication);
 
         } catch (Exception e) {
 
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("Invalid token");
+            response.setStatus(
+                    HttpServletResponse.SC_UNAUTHORIZED
+            );
+
+            response.setContentType("application/json");
+
+            response.getWriter().write(
+                    "{\"status\":401,\"message\":\"Invalid token\"}"
+            );
+
             return;
         }
 

@@ -30,7 +30,7 @@ public class JwtService {
                 .claim("role", role)
                 .claim("branchId", branchId)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 86400000))
+                .setExpiration(new Date(System.currentTimeMillis() + 900000))
                 .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
@@ -73,5 +73,38 @@ public class JwtService {
 
             return false;
         }
+    }
+
+    public String generateCustomerToken(String cidNo) {
+
+        return Jwts.builder()
+                .setSubject(cidNo)
+                .claim("type", "CUSTOMER")
+                .setIssuedAt(new Date())
+                .setExpiration(
+                        new Date(
+                                System.currentTimeMillis()
+                                        + 15 * 60 * 1000
+                        )
+                )
+                .signWith(
+                        key,
+                        SignatureAlgorithm.HS256
+                )
+                .compact();
+    }
+
+    public String extractTokenType(String token) {
+
+        Object type = Jwts.parserBuilder()
+                .setSigningKey(key)
+                .build()
+                .parseClaimsJws(token)
+                .getBody()
+                .get("type");
+
+        return type != null
+                ? type.toString()
+                : null;
     }
 }
