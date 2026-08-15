@@ -17,17 +17,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
-import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.Properties;
-import java.util.Random;
 import java.util.UUID;
 
-import jakarta.mail.PasswordAuthentication;
-import jakarta.mail.Session;
-
-import static org.bouncycastle.cms.RecipientId.password;
 
 @Repository
 public class ricbDAO {

@@ -22,7 +22,6 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URLDecoder;
 import java.net.http.HttpResponse;
-import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -161,74 +160,6 @@ public class business {
         }
     }
 
-//    @PostMapping("/resetPin")
-//    public ResponseEntity<?> resetPin(
-//            @RequestParam(required = false) String cidNo,
-//            @RequestParam(required = false) String newPIN) {
-//
-//        try {
-//
-//            // Validate CID
-//            if (cidNo == null || cidNo.trim().isEmpty()) {
-//
-//                return ResponseEntity
-//                        .badRequest()
-//                        .body("Error: please enter CID number.");
-//            }
-//
-//            // Validate PIN
-//            if (newPIN == null || newPIN.trim().isEmpty()) {
-//
-//                return ResponseEntity
-//                        .badRequest()
-//                        .body("Error: please enter new PIN.");
-//            }
-//
-//            cidNo = cidNo.trim();
-//            newPIN = newPIN.trim();
-//
-//            // Validate 4-digit PIN
-//            if (!newPIN.matches("\\d{4}")) {
-//
-//                JSONObject response = new JSONObject();
-//
-//                response.put("status", "0");
-//                response.put(
-//                        "message",
-//                        "PIN must be exactly 4 digits"
-//                );
-//
-//                return ResponseEntity
-//                        .badRequest()
-//                        .body(response.toString());
-//            }
-//
-//            // IMPORTANT:
-//            // Do NOT hash here.
-//            // DAO will hash the PIN once.
-//
-//            JSONArray json =
-//                    ricbDAO.resetPin(
-//                            cidNo,
-//                            newPIN
-//                    );
-//
-//            return ResponseEntity.ok(
-//                    json.toString()
-//            );
-//
-//        } catch (Exception e) {
-//
-//            e.printStackTrace();
-//
-//            return ResponseEntity
-//                    .internalServerError()
-//                    .body(
-//                            "Server was not able to process your request"
-//                    );
-//        }
-//    }
-
 	@GetMapping("/fireSFdetails")
     public ResponseEntity<?> fireSFdetails(@RequestParam(required = false) String policyNo) {
       try {
@@ -269,40 +200,65 @@ public class business {
 
 	}
 
-    @GetMapping("/lifeactivepolicy")
-    public ResponseEntity<?> lifeactivepolicy(
-            Authentication authentication) {
+//    @GetMapping("/lifeactivepolicy")
+//    public ResponseEntity<?> lifeactivepolicy(
+//            Authentication authentication) {
+//
+//        try {
+//
+//            // Get CID from the authenticated JWT
+//            String cidNo = authentication.getName();
+//
+//            if (cidNo == null || cidNo.trim().isEmpty()) {
+//                return ResponseEntity
+//                        .status(401)
+//                        .body("Unauthorized");
+//            }
+//
+//            JSONArray json =
+//                    ricbDAO.getPolicyDetails(
+//                            cidNo,
+//                            "lifeactivepolicy"
+//                    );
+//
+//            return ResponseEntity.ok(
+//                    json.toString()
+//            );
+//
+//        } catch (Exception e) {
+//
+//            e.printStackTrace();
+//
+//            return ResponseEntity
+//                    .internalServerError()
+//                    .body("Server was not able to process your request");
+//        }
+//    }
 
-        try {
+@GetMapping("/lifeactivepolicy")
 
-            // Get CID from the authenticated JWT
-            String cidNo = authentication.getName();
+public ResponseEntity<?> lifeactivepolicy(@RequestParam(required = false) String cidNo) {
 
-            if (cidNo == null || cidNo.trim().isEmpty()) {
-                return ResponseEntity
-                        .status(401)
-                        .body("Unauthorized");
-            }
+    try {
 
-            JSONArray json =
-                    ricbDAO.getPolicyDetails(
-                            cidNo,
-                            "lifeactivepolicy"
-                    );
+        if (cidNo == null) {
 
-            return ResponseEntity.ok(
-                    json.toString()
-            );
+            return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
 
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
-            return ResponseEntity
-                    .internalServerError()
-                    .body("Server was not able to process your request");
         }
+
+        JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeactivepolicy");
+
+        return ResponseEntity.ok(json.toString());
+
+    } catch (Exception e) {
+
+        e.printStackTrace();
+
+        return ResponseEntity.internalServerError().body("Server was not able to process your request");
+
     }
+}
 
     @GetMapping("/generalinsurance")
     public ResponseEntity<?> policyNumber(Authentication authentication) {
@@ -337,6 +293,20 @@ public class business {
                     .body("Server was not able to process your request");
         }
     }
+
+//    @GetMapping("/generalinsurance")
+//    public ResponseEntity<?> policyNumber(@RequestParam(required = false) String cidNo) {
+//        try {
+//            if (cidNo == null) {
+//                return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
+//            }
+//            JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeinsurance");
+//            return ResponseEntity.ok(json.toString());
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ResponseEntity.internalServerError().body("Server was not able to process your request");
+//        }
+//    }
 
     @GetMapping("/generalinsurancedetails")
     public ResponseEntity<?> policyDetails(@RequestParam(required = false) String policyNo) {

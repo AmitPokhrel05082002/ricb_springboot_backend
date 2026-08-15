@@ -55,8 +55,8 @@ public class SecurityConfig {
                         // MyRICB customer APIs
                         .requestMatchers(
                                 "/ricb/userprofile",
-                                "/ricb/generalinsurance",
-                                "/ricb/lifeactivepolicy"
+                                "/ricb/generalinsurance"
+//                                "/ricb/lifeactivepolicy",
 //                                "/ricb/generalinsurancedetails",
 //                                "/ricb/getOtipCustomer",
 //                                "/ricb/motortppolicy",
