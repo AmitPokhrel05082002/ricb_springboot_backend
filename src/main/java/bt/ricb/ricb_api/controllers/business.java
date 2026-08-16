@@ -10,7 +10,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import bt.ricb.ricb_api.security.JwtService;
+import org.springframework.security.core.Authentication;
 
 import bt.ricb.ricb_api.dao.*;
 import bt.ricb.ricb_api.util.BFSPKIImplementation;
@@ -33,28 +36,130 @@ public class business {
 
 	@Autowired
 	private ricbDAO ricbDAO;
-	
-	@GetMapping("/resetPin")
-	public ResponseEntity<?> resetPin(
-	        @RequestParam(required = false) String cidNo,
-	        @RequestParam(required = false) String newPIN) {
-	    try {
-	        if (cidNo == null || newPIN == null) {
-	            return ResponseEntity.badRequest().body("Error: please provide both cidNo and newPIN.");
-	        }
+    @Autowired
+    private JwtService jwtService;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
-	        JSONArray json = ricbDAO.resetPin(cidNo, newPIN);
-	        JSONObject wrapper = new JSONObject();
-	        wrapper.put("data", json.toString()); // wrap array as string
-	        return ResponseEntity.ok(wrapper.toString());
-	    } catch (Exception e) {
-	        e.printStackTrace();
-	        return ResponseEntity.internalServerError().body("Server was not able to process your request");
-	    }
-	}
+    @PostMapping("/forgotPin")
+    public ResponseEntity<?> forgotPin(
+            @RequestParam(required = false) String cidNo) {
 
+        try {
 
-	
+            if (cidNo == null || cidNo.trim().isEmpty()) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body("CID number is required.");
+            }
+
+            cidNo = cidNo.trim();
+
+            JSONArray json = ricbDAO.initiateForgotPin(cidNo);
+
+            return ResponseEntity.ok(json.toString());
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body("Server was not able to process your request");
+        }
+    }
+
+    @PostMapping("/verifyResetOtp")
+    public ResponseEntity<?> verifyResetOtp(
+            @RequestParam(required = false) String cidNo,
+            @RequestParam(required = false) String otp) {
+
+        try {
+
+            if (cidNo == null || cidNo.trim().isEmpty()) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body("CID number is required.");
+            }
+
+            if (otp == null || !otp.matches("\\d{6}")) {
+
+                return ResponseEntity
+                        .badRequest()
+                        .body("Invalid OTP.");
+            }
+
+            JSONArray json =
+                    ricbDAO.verifyResetOtp(
+                            cidNo.trim(),
+                            otp
+                    );
+
+            return ResponseEntity.ok(json.toString());
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body("Server was not able to process your request");
+        }
+    }
+
+    @PostMapping("/resetPin")
+    public ResponseEntity<?> resetPin(
+            @RequestParam(required = false) String resetToken,
+            @RequestParam(required = false) String newPIN) {
+
+        try {
+
+            if (resetToken == null || resetToken.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body("Error: please provide reset token.");
+            }
+
+            if (newPIN == null || newPIN.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body("Error: please provide new PIN.");
+            }
+
+            resetToken = resetToken.trim();
+            newPIN = newPIN.trim();
+
+            // 4 digit PIN
+            if (!newPIN.matches("\\d{4}")) {
+
+                JSONObject response = new JSONObject();
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "PIN must be exactly 4 digits"
+                );
+
+                return ResponseEntity.badRequest()
+                        .body(response.toString());
+            }
+
+            JSONArray json = ricbDAO.resetPin(
+                    resetToken,
+                    newPIN
+            );
+
+            return ResponseEntity.ok(json.toString());
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity.internalServerError()
+                    .body("Server was not able to process your request");
+        }
+    }
+
 	@GetMapping("/fireSFdetails")
     public ResponseEntity<?> fireSFdetails(@RequestParam(required = false) String policyNo) {
       try {
@@ -94,46 +199,114 @@ public class business {
 	}
 
 	}
-	
-	@GetMapping("/lifeactivepolicy")
 
-	public ResponseEntity<?> lifeactivepolicy(@RequestParam(required = false) String cidNo) {
+//    @GetMapping("/lifeactivepolicy")
+//    public ResponseEntity<?> lifeactivepolicy(
+//            Authentication authentication) {
+//
+//        try {
+//
+//            // Get CID from the authenticated JWT
+//            String cidNo = authentication.getName();
+//
+//            if (cidNo == null || cidNo.trim().isEmpty()) {
+//                return ResponseEntity
+//                        .status(401)
+//                        .body("Unauthorized");
+//            }
+//
+//            JSONArray json =
+//                    ricbDAO.getPolicyDetails(
+//                            cidNo,
+//                            "lifeactivepolicy"
+//                    );
+//
+//            return ResponseEntity.ok(
+//                    json.toString()
+//            );
+//
+//        } catch (Exception e) {
+//
+//            e.printStackTrace();
+//
+//            return ResponseEntity
+//                    .internalServerError()
+//                    .body("Server was not able to process your request");
+//        }
+//    }
 
-	try {
+@GetMapping("/lifeactivepolicy")
 
-	if (cidNo == null) {
+public ResponseEntity<?> lifeactivepolicy(@RequestParam(required = false) String cidNo) {
 
-	return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
+    try {
 
-	}
+        if (cidNo == null) {
 
-	JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeactivepolicy");
+            return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
 
-	return ResponseEntity.ok(json.toString());
+        }
 
-	} catch (Exception e) {
+        JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeactivepolicy");
 
-	e.printStackTrace();
+        return ResponseEntity.ok(json.toString());
 
-	return ResponseEntity.internalServerError().body("Server was not able to process your request");
+    } catch (Exception e) {
 
-	}
+        e.printStackTrace();
 
-	}
+        return ResponseEntity.internalServerError().body("Server was not able to process your request");
 
-	@GetMapping("/generalinsurance")
-	public ResponseEntity<?> policyNumber(@RequestParam(required = false) String cidNo) {
-		try {
-			if (cidNo == null) {
-				return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
-			}
-			JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeinsurance");
-			return ResponseEntity.ok(json.toString());
-		} catch (Exception e) {
-			e.printStackTrace();
-			return ResponseEntity.internalServerError().body("Server was not able to process your request");
-		}
-	}
+    }
+}
+
+    @GetMapping("/generalinsurance")
+    public ResponseEntity<?> policyNumber(Authentication authentication) {
+
+        try {
+
+            // Get CID from JWT
+            String cidNo = authentication.getName();
+
+            if (cidNo == null || cidNo.trim().isEmpty()) {
+                return ResponseEntity
+                        .status(401)
+                        .body("Unauthorized");
+            }
+
+            JSONArray json =
+                    ricbDAO.getPolicyDetails(
+                            cidNo,
+                            "lifeinsurance"
+                    );
+
+            return ResponseEntity.ok(
+                    json.toString()
+            );
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body("Server was not able to process your request");
+        }
+    }
+
+//    @GetMapping("/generalinsurance")
+//    public ResponseEntity<?> policyNumber(@RequestParam(required = false) String cidNo) {
+//        try {
+//            if (cidNo == null) {
+//                return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
+//            }
+//            JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeinsurance");
+//            return ResponseEntity.ok(json.toString());
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ResponseEntity.internalServerError().body("Server was not able to process your request");
+//        }
+//    }
 
     @GetMapping("/generalinsurancedetails")
     public ResponseEntity<?> policyDetails(@RequestParam(required = false) String policyNo) {
@@ -196,32 +369,121 @@ public class business {
 	    }
 	}
 
-	@GetMapping("/validatePassword")
-	public ResponseEntity<?> validatePassword(@RequestParam(required = false) String cidNo,
-	        @RequestParam(required = false) String password) {
-	    try {
-	        if (cidNo == null || cidNo.trim().isEmpty()) {
-	            return ResponseEntity.badRequest().body("Error: please enter CID number.");
-	        }
-	        if (password == null || password.trim().isEmpty()) {
-	            return ResponseEntity.badRequest().body("Error: please enter PIN.");
-	        }
-	        // Enforce 4-digit numeric PIN
-	        if (!password.trim().matches("\\d{4}")) {
-	            JSONArray json = new JSONArray();
-	            JSONObject obj = new JSONObject();
-	            obj.put("status", "0");
-	            obj.put("message", "Invalid PIN format");
-	            json.put(obj);
-	            return ResponseEntity.ok(json.toString());
-	        }
-	        JSONArray json = ricbDAO.validatePassword(cidNo.trim(), password);
-	        return ResponseEntity.ok(json.toString());
-	    } catch (Exception e) {
-	        e.printStackTrace();
-	        return ResponseEntity.internalServerError().body("Server was not able to process your request");
-	    }
-	}
+    @GetMapping("/validatePassword")
+    public ResponseEntity<?> validatePassword(
+            @RequestParam(required = false) String cidNo,
+            @RequestParam(required = false) String password) {
+
+        try {
+
+            if (cidNo == null || cidNo.trim().isEmpty()) {
+
+                return ResponseEntity.badRequest()
+                        .body("Error: please enter CID number.");
+            }
+
+            if (password == null || password.trim().isEmpty()) {
+
+                return ResponseEntity.badRequest()
+                        .body("Error: please enter PIN.");
+            }
+
+            // Enforce 4-digit numeric PIN
+            if (!password.trim().matches("\\d{4}")) {
+
+                JSONArray json = new JSONArray();
+
+                JSONObject obj = new JSONObject();
+
+                obj.put("status", "0");
+                obj.put("message", "Invalid PIN format");
+
+                json.put(obj);
+
+                return ResponseEntity.ok(json.toString());
+            }
+
+            // Existing validation
+            JSONArray json = ricbDAO.validatePassword(
+                    cidNo.trim(),
+                    password
+            );
+
+            // ============================================================
+            // CHECK LOGIN RESULT
+            // ============================================================
+
+            if (json.length() > 0) {
+
+                JSONObject result =
+                        json.getJSONObject(0);
+
+                if ("1".equals(
+                        result.optString("status")
+                )) {
+
+                    // ====================================================
+                    // GENERATE MYRICB CUSTOMER JWT
+                    // ====================================================
+
+                    String token =
+                            jwtService.generateCustomerToken(
+                                    cidNo.trim()
+                            );
+
+                    JSONObject response =
+                            new JSONObject();
+
+                    response.put(
+                            "status",
+                            "1"
+                    );
+
+                    response.put(
+                            "message",
+                            "Password validated successfully"
+                    );
+
+                    response.put(
+                            "accessToken",
+                            token
+                    );
+
+                    response.put(
+                            "tokenType",
+                            "Bearer"
+                    );
+
+                    response.put(
+                            "expiresIn",
+                            900
+                    );
+
+                    return ResponseEntity.ok(
+                            response.toString()
+                    );
+                }
+            }
+
+            // ============================================================
+            // INVALID LOGIN
+            // ============================================================
+
+            return ResponseEntity
+                    .status(401)
+                    .body(json.toString());
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body(
+                            "Server was not able to process your request"
+                    );
+        }
+    }
 
     @GetMapping("/ndi-validatePassword")
     public ResponseEntity<?> NdivalidatePassword(@RequestParam(required = false) String cidNo) {
@@ -694,19 +956,39 @@ public class business {
 //        }
 //    }
 
-	@GetMapping("/userprofile")
-	public ResponseEntity<?> userprofile(@RequestParam(required = false) String cidNo) {
-		try {
-			if (cidNo == null) {
-				return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
-			}
-			JSONArray json = ricbDAO.getUserDetails(cidNo);
-			return ResponseEntity.ok(json.toString());
-		} catch (Exception e) {
-			e.printStackTrace();
-			return ResponseEntity.internalServerError().body("Server was not able to process your request");
-		}
-	}
+    @GetMapping("/userprofile")
+    public ResponseEntity<?> userprofile(
+            Authentication authentication) {
+
+        try {
+
+            String cidNo = authentication.getName();
+
+            if (cidNo == null || cidNo.trim().isEmpty()) {
+
+                return ResponseEntity
+                        .status(401)
+                        .body("Unauthorized");
+            }
+
+            JSONArray json =
+                    ricbDAO.getUserDetails(cidNo);
+
+            return ResponseEntity.ok(
+                    json.toString()
+            );
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity
+                    .internalServerError()
+                    .body(
+                            "Server was not able to process your request"
+                    );
+        }
+    }
 
 	@GetMapping("/sendmail")
 	public ResponseEntity<?> sendmail(@RequestParam String to, @RequestParam String from, @RequestParam String subject,
@@ -1058,19 +1340,19 @@ public class business {
     }
     
     //MCP RENEWAL
-    
+
     @GetMapping("/motorcppolicy")
     public ResponseEntity<?> motorcppolicy(@RequestParam(required = false) String cidNo) {
-      try {
-        if (cidNo == null) {
-          return ResponseEntity.badRequest().body("Error: please enter cidNo number of a policy holder.");
+        try {
+            if (cidNo == null) {
+                return ResponseEntity.badRequest().body("Error: please enter cidNo number of a policy holder.");
+            }
+            JSONArray json = ricbDAO.getPolicyDetails(cidNo, "motorcppolicy");
+            return ResponseEntity.ok(json.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("Server was not able to process your request");
         }
-        JSONArray json = ricbDAO.getPolicyDetails(cidNo, "motorcppolicy");
-        return ResponseEntity.ok(json.toString());
-      } catch (Exception e) {
-        e.printStackTrace();
-        return ResponseEntity.internalServerError().body("Server was not able to process your request");
-      }
     }
     
     @GetMapping("/motormcpinsurancedetails")
@@ -1104,16 +1386,16 @@ public class business {
     //FIRE-SF RENEWAL
     @GetMapping("/firesfpolicy")
     public ResponseEntity<?> firesfpolicy(@RequestParam(required = false) String cidNo) {
-      try {
-        if (cidNo == null) {
-          return ResponseEntity.badRequest().body("Error: please enter cidNo number of a policy holder.");
+        try {
+            if (cidNo == null) {
+                return ResponseEntity.badRequest().body("Error: please enter cidNo number of a policy holder.");
+            }
+            JSONArray json = ricbDAO.getInstance().getPolicyDetails(cidNo, "firesfpolicy");
+            return ResponseEntity.ok(json.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("Server was not able to process your request");
         }
-        JSONArray json = ricbDAO.getInstance().getPolicyDetails(cidNo, "firesfpolicy");
-        return ResponseEntity.ok(json.toString());
-      } catch (Exception e) {
-        e.printStackTrace();
-        return ResponseEntity.internalServerError().body("Server was not able to process your request");
-      }
     }
     
     @GetMapping("/fireSFPrevdetails")

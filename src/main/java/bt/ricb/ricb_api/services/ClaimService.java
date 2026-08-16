@@ -76,7 +76,6 @@ public class ClaimService {
     private AgencyUserRepository agencyUserRepo;
 
 
-
     // ================= Claim Status Counts =================
     public Map<String, Long> getClaimStatusCounts(AgencyUserEntity user) {
 
@@ -86,30 +85,21 @@ public class ClaimService {
         if (user.getRole() == AgencyUserEntity.Role.ADMIN
                 || user.getRole() == AgencyUserEntity.Role.IT_OFFICER) {
 
-            counts.put("totalClaims", claimRepo.count());
-            counts.put("pending", claimRepo.countByStatus("Pending"));
-            counts.put("approved", claimRepo.countByStatus("Approved"));
-            counts.put("rejected", claimRepo.countByStatus("Rejected"));
             counts.put("resubmission", claimRepo.countByStatus("Resubmission Required"));
             counts.put("completed", claimRepo.countByStatus("Completed"));
-
+            // Policy Counts
+            counts.put("totalClaims", policyRepo.count());
+            counts.put("pending",
+                    policyRepo.countByClaimStatus("Pending"));
+            counts.put("approved",
+                    policyRepo.countByClaimStatus("Approved"));
+            counts.put("rejected",
+                    policyRepo.countByClaimStatus("Rejected"));
         } else {
 
             String branchId = user.getBranchId();
 
             // ================= BRANCH FILTER =================
-            counts.put("totalClaims",
-                    claimRepo.countByNearestBranchId(branchId));
-
-            counts.put("pending",
-                    claimRepo.countByStatusAndNearestBranchId("Pending", branchId));
-
-            counts.put("approved",
-                    claimRepo.countByStatusAndNearestBranchId("Approved", branchId));
-
-            counts.put("rejected",
-                    claimRepo.countByStatusAndNearestBranchId("Rejected", branchId));
-
             counts.put("resubmission",
                     claimRepo.countByStatusAndNearestBranchId(
                             "Resubmission Required",
@@ -121,8 +111,22 @@ public class ClaimService {
                             "Completed",
                             branchId
                     ));
-        }
+            // Policy Counts
+            counts.put("totalClaims",
+                    policyRepo.countByClaimBranch(branchId));
 
+            counts.put("pending",
+                    policyRepo.countByClaimStatusAndClaimBranch(
+                            "Pending", branchId));
+
+            counts.put("approved",
+                    policyRepo.countByClaimStatusAndClaimBranch(
+                            "Approved", branchId));
+
+            counts.put("rejected",
+                    policyRepo.countByClaimStatusAndClaimBranch(
+                            "Rejected", branchId));
+        }
         return counts;
     }
 
