@@ -35,6 +35,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
@@ -59,7 +60,8 @@ public class InsuranceService {
 	private ApiService apiService;
 	@Autowired
 	private EmailService mailService;
-
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 	public void updateOrSaveUser(UserEntity user) {
 		this.userRepo.save(user);
 	}
@@ -264,13 +266,19 @@ public class InsuranceService {
 		}
 	}
 
-	public void addUser(UserEntity user) {
-		try {
-			this.userRepo.save(user);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
+    public void addUser(UserEntity user) {
+        try {
+            if (user.getPassword() != null && !user.getPassword().isEmpty()) {
+                user.setPassword(passwordEncoder.encode(user.getPassword()));
+            }
+
+            userRepo.save(user);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
+    }
 
 	private int generateRandomOTP() {
 		SecureRandom secureRandom = new SecureRandom();
