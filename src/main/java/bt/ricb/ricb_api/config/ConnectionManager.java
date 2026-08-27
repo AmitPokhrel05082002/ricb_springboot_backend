@@ -46,7 +46,6 @@ public class ConnectionManager {
 			e.printStackTrace();
 			return connection;
 		}
-
 		System.out.println("Oracle JDBC Driver Registered successful!");
 		return connection;
 	}

@@ -717,7 +717,12 @@ public class apiController {
 	        	    "b.customer_name name, b.con_mobile_no1 cust_mobile_no, " +
 	        	    "c.premium_per_instalment premium, " +
 	        	    "TO_CHAR(MAX(aa.due_date), 'DD/MM/YYYY') last, " +
-	        	    "d.branch_name branch " +
+                                "d.branch_name AS branch, " +
+                                "RTRIM(" +
+                                "    NVL2(RESI_ADDRESS_1, RESI_ADDRESS_1 || ', ', '') || " +
+                                "    NVL2(RESI_ADDRESS_2, RESI_ADDRESS_2 || ', ', '') || " +
+                                "    NVL2(RESI_ADDRESS_3, RESI_ADDRESS_3 || ', ', '')" +
+                                ") AS FULL_ADDRESS " +
 	        	    "FROM RICB_LI.tl_li_tr_policy_header a, " +
 	        	    "tl_in_mas_customer b, " +
 	        	    "RICB_LI.tl_li_tr_premium_list c, " +
@@ -733,7 +738,7 @@ public class apiController {
 	        	    "GROUP BY a.policy_no, a.underwriting_year, a.sum_assured, a.policy_start_date, " +
 	        	    "a.policy_end_date, a.mode_of_payment, a.status_code, b.customer_name, " +
 	        	    "b.con_mobile_no1, c.premium_per_instalment, a.agent_code, d.branch_name, " +
-	        	    "a.serial_no " +
+	        	    "a.serial_no, b.RESI_ADDRESS_1,b.RESI_ADDRESS_2,b.RESI_ADDRESS_3 " +
 	        	    "ORDER BY a.policy_start_date";
 
 	        pst2 = conn.prepareStatement(query);
@@ -1150,10 +1155,14 @@ public class apiController {
             DECODE(a.status_code,'G','Active Policy','H','LAPSED', 'I', 'Lapsed Paid Up','J', 'Forfieted','K','Matured','L','Closed- Maturity','M','Death Claim Entered/Registered','MM','Surrender Claim Entered/','N','Closed- Death','P','Closed- Surrender','Q','Closed- Forfeiture','S','Closed- Claim Declined','U','Closed- PTD','V','Cancelled', 'X','Rejected') status,
             b.customer_name name,b.con_mobile_no1 mobno,  c.premium_per_instalment premium ,
             TO_CHAR(max(aa.due_date),'DD/MM/YYYY') lastpaiddate 
-            ,d.branch_name branch
+            ,d.branch_name branch,RTRIM(
+                                    NVL2(RESI_ADDRESS_1, RESI_ADDRESS_1 || ', ', '') ||
+                                    NVL2(RESI_ADDRESS_2, RESI_ADDRESS_2 || ', ', '') ||
+                                    NVL2(RESI_ADDRESS_3, RESI_ADDRESS_3 || ', ', '')
+                                ) AS FULL_ADDRESS
             from RICB_LI.tl_li_tr_policy_header a, tl_in_mas_customer b, RICB_LI.tl_li_tr_premium_list c 
             ,(select * from RICB_LI.tl_li_tr_premium_list where status_code='PAID')aa
-            ,tl_in_mas_branch d  
+            ,tl_in_mas_branch d          
             where a.customer_code=b.customer_code 
             and aa.policy_serial_no=a.serial_no
             and a.serial_no=c.policy_serial_no 
@@ -1162,7 +1171,7 @@ public class apiController {
             and c.status_code='PENDING'
             and d.branch_code=a.branch_code
             group by a.policy_no, a.underwriting_year, a.sum_assured, a.policy_start_date, a.policy_end_date,a.mode_of_payment, a.status_code,
-            b.customer_name, b.con_mobile_no1, c.premium_per_instalment, a.agent_code,d.branch_name
+            b.customer_name, b.con_mobile_no1, c.premium_per_instalment, a.agent_code,d.branch_name,b.RESI_ADDRESS_1,b.RESI_ADDRESS_2,b.RESI_ADDRESS_3
             order by a.policy_start_date
 
             """;

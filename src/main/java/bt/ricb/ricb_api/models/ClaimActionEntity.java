@@ -34,7 +34,8 @@ public class ClaimActionEntity {
         Completed,
         Approved,
         Rejected,
-        Resubmitted
+        Resubmitted,
+        DocumentDownloaded
     }
 
     // ===== Getters & Setters =====

@@ -12,10 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.io.ByteArrayOutputStream;
+import org.springframework.security.core.Authentication;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,7 +22,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import java.util.zip.ZipOutputStream;
 
 @Service
 public class ClaimService {
@@ -1076,38 +1073,70 @@ public class ClaimService {
     }
 
 //   DOWNLOAD SINGLE FILE ENDPOINT
-    public ResponseEntity<ByteArrayResource> downloadSingleDocument(
-            Integer documentId
-    ) {
+public ResponseEntity<ByteArrayResource> downloadSingleDocument(
+        Integer documentId,
+        Authentication authentication
+) {
+    ClaimDocumentsEntity doc =
+            claimDocumentsRepo.findById(documentId)
+                    .orElseThrow(() ->
+                            new RuntimeException("Document not found"));
+    String filePath = doc.getZipFilePath();
 
-        ClaimDocumentsEntity doc =
-                claimDocumentsRepo.findById(documentId)
-                        .orElseThrow(() ->
-                                new RuntimeException("Document not found"));
-
-        String filePath = doc.getZipFilePath();
-
-        String key = extractS3Key(filePath);
-
-        byte[] fileBytes = s3Service.downloadFile(key);
-
-        if (fileBytes == null || fileBytes.length == 0) {
-            throw new RuntimeException("File not found in S3");
-        }
-
-        ByteArrayResource resource =
-                new ByteArrayResource(fileBytes);
-
-        return ResponseEntity.ok()
-                .header(
-                        HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" +
-                                extractFileName(filePath) + "\""
-                )
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .contentLength(fileBytes.length)
-                .body(resource);
+    if (filePath == null || filePath.isBlank()) {
+        throw new RuntimeException("Document file path is empty");
     }
+
+    String key = extractS3Key(filePath);
+
+    byte[] fileBytes = s3Service.downloadFile(key);
+
+    if (fileBytes == null || fileBytes.length == 0) {
+        throw new RuntimeException("File not found in S3");
+    }
+
+    AgencyUserEntity user =
+            userRepo.findByUsername(authentication.getName())
+                    .orElseThrow(() ->
+                            new RuntimeException("User not found"));
+
+    ClaimActionEntity action = new ClaimActionEntity();
+
+    action.setClaimId(doc.getClaimId());
+
+    action.setActionType(
+            ClaimActionEntity.ActionType.DocumentDownloaded
+    );
+
+    action.setRemarks(
+            "Document downloaded"
+    );
+
+    action.setActionedBy(
+            String.valueOf(user.getId())
+    );
+
+    action.setActionedAt(
+            LocalDateTime.now()
+    );
+    claimActionsRepo.save(action);
+
+    ByteArrayResource resource =
+            new ByteArrayResource(fileBytes);
+
+    return ResponseEntity.ok()
+            .header(
+                    HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename=\"" +
+                            extractFileName(filePath) +
+                            "\""
+            )
+            .contentType(
+                    MediaType.APPLICATION_OCTET_STREAM
+            )
+            .contentLength(fileBytes.length)
+            .body(resource);
+}
 
     private String extractS3Key(String filePath) {
 

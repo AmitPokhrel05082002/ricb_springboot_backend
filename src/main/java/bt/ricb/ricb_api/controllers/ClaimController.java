@@ -593,9 +593,10 @@ public class ClaimController {
 
     @GetMapping("/document/download/{documentId}")
     public ResponseEntity<ByteArrayResource> downloadSingleDocument(
-            @PathVariable Integer documentId
+            @PathVariable Integer documentId,
+            Authentication authentication
     ) {
-        return claimService.downloadSingleDocument(documentId);
+        return claimService.downloadSingleDocument(documentId, authentication);
     }
 
     @PostMapping(value = "/update-document/{cin}", consumes = "multipart/form-data")
