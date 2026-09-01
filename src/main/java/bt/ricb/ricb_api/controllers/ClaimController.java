@@ -153,9 +153,29 @@ public class ClaimController {
     }
 
     @GetMapping("/{cin}/track")
-    public Map<String, Object> getClaimDetails(@PathVariable String cin) {
+    public Map<String, Object> getClaimDetails(
+            @PathVariable String cin,
+            @RequestParam(required = false) String deceasedCid,
+            Authentication authentication
+    ) {
+        return claimService.getClaimDetails(
+                cin,
+                deceasedCid,
+                authentication
+        );
+    }
 
-        return claimService.getClaimDetails(cin);
+    @GetMapping("/{cin}/RLItrack")
+    public Map<String, Object> getRLIClaimDetails(
+            @PathVariable String cin,
+            @RequestParam(required = false) String deceasedCid,
+            Authentication authentication
+    ) {
+        return claimService.getRLIClaimDetails(
+                cin,
+                deceasedCid,
+                authentication
+        );
     }
 
     // ===== 1. Dashboard status count =====

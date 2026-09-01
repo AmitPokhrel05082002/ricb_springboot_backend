@@ -23,7 +23,16 @@ public class AuthController {
 
     @PostMapping("/forgot-password")
     public ResponseEntity<String> forgotPassword(@RequestParam String username) {
-        return ResponseEntity.ok(authService.forgotPassword(username));
+
+        try {
+            String message = authService.forgotPassword(username);
+            return ResponseEntity.ok(message);
+
+        } catch (RuntimeException e) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(e.getMessage());
+        }
     }
 
     @PostMapping("/reset-password")

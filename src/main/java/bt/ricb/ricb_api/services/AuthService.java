@@ -7,7 +7,9 @@ import bt.ricb.ricb_api.security.JwtService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
+import org.springframework.transaction.annotation.Transactional;
+import jakarta.mail.MessagingException;
+import java.io.IOException;
 import java.util.List;
 import java.util.Random;
 
@@ -63,29 +65,71 @@ public class AuthService {
     // ================= FORGOT PASSWORD =================
     public String forgotPassword(String username) {
 
+        // 1. Find user
         AgencyUserEntity user = userRepo.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
 
+        // 2. Check email
+        if (user.getEmail() == null ||
+                user.getEmail().trim().isEmpty()) {
+
+            throw new RuntimeException(
+                    "No email address registered for this user");
+        }
+
+        // 3. Generate temporary password
         String newPassword = generateRandomPassword(10);
 
-        user.setPassword(encoder.encode(newPassword));
-        userRepo.save(user);
-
+        // 4. Email details
         String subject = "RICB Password Reset";
 
         String body =
-                "Your password has been reset.\n\n"
+                "Dear User,\n\n"
+                        + "Your RICB password has been reset.\n\n"
+                        + "Username: " + username + "\n"
                         + "New Password: " + newPassword + "\n\n"
-                        + "Please login and change it.";
+                        + "Please login and change your password immediately.\n\n"
+                        + "Regards,\n"
+                        + "RICB";
 
         try {
-            emailService.sendEmail(user.getEmail(), subject, body, null);
-        } catch (Exception e) {
-            // log error but do NOT break password reset
-            System.out.println("Email failed: " + e.getMessage());
-        }
 
-        return "Password reset successful. Check your email.";
+            // 5. SEND EMAIL FIRST
+            // If this fails, an exception will be thrown
+            emailService.sendEmail(
+                    user.getEmail(),
+                    subject,
+                    body,
+                    null
+            );
+
+            // 6. Only update password if email was successfully sent
+            user.setPassword(encoder.encode(newPassword));
+
+            userRepo.save(user);
+
+            return "Password reset successful. Check your email.";
+
+        } catch (MessagingException | IOException e) {
+
+            e.printStackTrace();
+
+            // Password has NOT been changed
+            throw new RuntimeException(
+                    "Failed to send password reset email. "
+                            + "Your password was not changed."
+            );
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            throw new RuntimeException(
+                    "Password reset failed. "
+                            + "Your password was not changed."
+            );
+        }
     }
 
     // ================= RESET PASSWORD =================

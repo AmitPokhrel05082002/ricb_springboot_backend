@@ -680,7 +680,6 @@ public class ClaimService {
         } catch (Exception e) {
             e.printStackTrace();
         }
-
         return claim;
     }
 
@@ -895,19 +894,114 @@ public class ClaimService {
         }
     }
 
-    // ================= Track Records =================
     private final ClaimRepository claimRepository;
     private final ClaimAuditRepository claimAuditRepository;
 
-    public ClaimService(ClaimRepository claimRepository, ClaimAuditRepository claimAuditRepository) {
+    public ClaimService(
+            ClaimRepository claimRepository,
+            ClaimAuditRepository claimAuditRepository,
+            PolicyRepository policyRepo,
+            PolicyHolderRepository policyHolderRepo
+    ) {
         this.claimRepository = claimRepository;
         this.claimAuditRepository = claimAuditRepository;
+        this.policyRepo = policyRepo;
+        this.policyHolderRepo = policyHolderRepo;
     }
 
-    public Map<String, Object> getClaimDetails(String cin) {
+    public Map<String, Object> getClaimDetails(
+            String cin,
+            String deceasedCid,
+            Authentication authentication
+    ) {
+
+        // ================= Claim Details =================
 
         ClaimEntity claim = claimRepository.findByCin(cin)
-                .orElseThrow(() -> new RuntimeException("Claim not found with CIN: " + cin));
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Claim not found with CIN: " + cin
+                        )
+                );
+
+        // ================= Determine User Type =================
+
+        boolean isInternalUser = false;
+
+        if (authentication != null
+                && authentication.isAuthenticated()) {
+
+            isInternalUser = authentication.getAuthorities()
+                    .stream()
+                    .anyMatch(authority -> {
+
+                        String role = authority.getAuthority();
+
+                        return role.equals("ROLE_ADMIN")
+                                || role.equals("ROLE_CLAIM_OFFICER")
+                                || role.equals("ROLE_IT_OFFICER");
+                    });
+        }
+
+        // ================= Exclude RLI for External Users =================
+
+        if (!isInternalUser
+                && "DBR".equalsIgnoreCase(
+                claim.getClaimType() != null
+                        ? claim.getClaimType().trim()
+                        : ""
+        )) {
+
+            throw new RuntimeException(
+                    "RLI claims must be tracked using the RLI tracking endpoint"
+            );
+        }
+
+        // ================= External User Validation =================
+
+        if (!isInternalUser) {
+
+            // Deceased CID is mandatory
+            if (deceasedCid == null
+                    || deceasedCid.trim().isEmpty()) {
+
+                throw new RuntimeException(
+                        "Deceased CID is required"
+                );
+            }
+
+            String finalDeceasedCid = deceasedCid.trim();
+
+            // Find policy holder using deceased CID
+            PolicyHolderEntity deceased =
+                    policyHolderRepo
+                            .findByCid(finalDeceasedCid)
+                            .orElseThrow(() ->
+                                    new RuntimeException(
+                                            "Deceased not found with CID: "
+                                                    + finalDeceasedCid
+                                    )
+                            );
+
+            if (claim.getPolicyHolderId() == null) {
+
+                throw new RuntimeException(
+                        "No policy holder is associated with claim: "
+                                + cin
+                );
+            }
+
+            if (!claim.getPolicyHolderId()
+                    .equals(deceased.getId())) {
+
+                throw new RuntimeException(
+                        "Deceased CID does not belong to claim: "
+                                + cin
+                );
+            }
+        }
+
+        // ================= Response =================
 
         Map<String, Object> response = new HashMap<>();
 
@@ -918,16 +1012,34 @@ public class ClaimService {
         response.put("remarks", claim.getRemarks());
 
         // ================= Policy Details =================
-        List<PolicyEntity> policies =
-                policyRepo.findByPolicyHolderId(claim.getPolicyHolderId());
 
-        List<Map<String, Object>> policyList = new ArrayList<>();
+        List<PolicyEntity> policies =
+                policyRepo.findByPolicyHolderId(
+                        claim.getPolicyHolderId()
+                );
+
+        List<Map<String, Object>> policyList =
+                new ArrayList<>();
 
         for (PolicyEntity policy : policies) {
-            Map<String, Object> p = new HashMap<>();
-            p.put("policyNumber", policy.getPolicyNumber());
-            p.put("claimStatus", policy.getClaimStatus());
-            p.put("remarks", policy.getRemarks());
+
+            Map<String, Object> p =
+                    new HashMap<>();
+
+            p.put(
+                    "policyNumber",
+                    policy.getPolicyNumber()
+            );
+
+            p.put(
+                    "claimStatus",
+                    policy.getClaimStatus()
+            );
+
+            p.put(
+                    "remarks",
+                    policy.getRemarks()
+            );
 
             policyList.add(p);
         }
@@ -935,16 +1047,215 @@ public class ClaimService {
         response.put("policies", policyList);
 
         // ================= Audit History =================
-        List<Map<String, Object>> auditHistory = new ArrayList<>();
+
+        List<Map<String, Object>> auditHistory =
+                new ArrayList<>();
+
         List<ClaimAuditEntity> audits =
-                claimAuditRepository.findByCinOrderByActionedAtDesc(cin);
+                claimAuditRepository
+                        .findByCinOrderByActionedAtDesc(cin);
 
         for (ClaimAuditEntity audit : audits) {
-            Map<String, Object> auditMap = new HashMap<>();
-            auditMap.put("actionedAt", audit.getActionedAt());
-            auditMap.put("policyNumber", audit.getPolicyNumber());
-            auditMap.put("newStatus", audit.getNewStatus());
-            auditMap.put("remarks", audit.getRemarks()); // added here
+
+            Map<String, Object> auditMap =
+                    new HashMap<>();
+
+            auditMap.put(
+                    "actionedAt",
+                    audit.getActionedAt()
+            );
+
+            auditMap.put(
+                    "policyNumber",
+                    audit.getPolicyNumber()
+            );
+
+            auditMap.put(
+                    "newStatus",
+                    audit.getNewStatus()
+            );
+
+            auditMap.put(
+                    "remarks",
+                    audit.getRemarks()
+            );
+
+            auditHistory.add(auditMap);
+        }
+
+        response.put("auditHistory", auditHistory);
+
+        return response;
+    }
+
+    public Map<String, Object> getRLIClaimDetails(
+            String cin,
+            String deceasedCid,
+            Authentication authentication
+    ) {
+
+        // ================= Claim Details =================
+
+        ClaimEntity claim = claimRepository.findByCin(cin)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Claim not found with CIN: " + cin
+                        )
+                );
+
+        // ================= RLI Claim Validation =================
+        // Only DBR claims are allowed
+
+        if (claim.getClaimType() == null
+                || !"DBR".equalsIgnoreCase(
+                claim.getClaimType().trim()
+        )) {
+
+            throw new RuntimeException(
+                    "This is not an RLI claim"
+            );
+        }
+
+        boolean isInternalUser = false;
+
+        if (authentication != null
+                && authentication.isAuthenticated()) {
+
+            isInternalUser = authentication.getAuthorities()
+                    .stream()
+                    .anyMatch(authority -> {
+
+                        String role = authority.getAuthority();
+
+                        return role.equals("ROLE_ADMIN")
+                                || role.equals("ROLE_CLAIM_OFFICER")
+                                || role.equals("ROLE_IT_OFFICER");
+                    });
+        }
+
+        // ================= External User Validation =================
+
+        if (!isInternalUser) {
+
+            // Deceased CID is mandatory
+            if (deceasedCid == null
+                    || deceasedCid.trim().isEmpty()) {
+
+                throw new RuntimeException(
+                        "Deceased CID is required"
+                );
+            }
+
+            String finalDeceasedCid = deceasedCid.trim();
+
+            // Find policy holder using deceased CID
+            PolicyHolderEntity deceased =
+                    policyHolderRepo
+                            .findByCid(finalDeceasedCid)
+                            .orElseThrow(() ->
+                                    new RuntimeException(
+                                            "Deceased not found with CID: "
+                                                    + finalDeceasedCid
+                                    )
+                            );
+
+            if (claim.getPolicyHolderId() == null) {
+
+                throw new RuntimeException(
+                        "No policy holder is associated with claim: "
+                                + cin
+                );
+            }
+
+            if (!claim.getPolicyHolderId()
+                    .equals(deceased.getId())) {
+
+                throw new RuntimeException(
+                        "Deceased CID does not belong to claim: "
+                                + cin
+                );
+            }
+        }
+
+        // ================= Response =================
+
+        Map<String, Object> response = new HashMap<>();
+
+        response.put("cin", claim.getCin());
+        response.put("createdAt", claim.getCreatedAt());
+        response.put("updatedAt", claim.getUpdatedAt());
+        response.put("status", claim.getStatus());
+        response.put("remarks", claim.getRemarks());
+
+        // ================= Policy Details =================
+
+        List<PolicyEntity> policies =
+                policyRepo.findByPolicyHolderId(
+                        claim.getPolicyHolderId()
+                );
+
+        List<Map<String, Object>> policyList =
+                new ArrayList<>();
+
+        for (PolicyEntity policy : policies) {
+
+            Map<String, Object> p =
+                    new HashMap<>();
+
+            p.put(
+                    "policyNumber",
+                    policy.getPolicyNumber()
+            );
+
+            p.put(
+                    "claimStatus",
+                    policy.getClaimStatus()
+            );
+
+            p.put(
+                    "remarks",
+                    policy.getRemarks()
+            );
+
+            policyList.add(p);
+        }
+
+        response.put("policies", policyList);
+
+        // ================= Audit History =================
+
+        List<Map<String, Object>> auditHistory =
+                new ArrayList<>();
+
+        List<ClaimAuditEntity> audits =
+                claimAuditRepository
+                        .findByCinOrderByActionedAtDesc(cin);
+
+        for (ClaimAuditEntity audit : audits) {
+
+            Map<String, Object> auditMap =
+                    new HashMap<>();
+
+            auditMap.put(
+                    "actionedAt",
+                    audit.getActionedAt()
+            );
+
+            auditMap.put(
+                    "policyNumber",
+                    audit.getPolicyNumber()
+            );
+
+            auditMap.put(
+                    "newStatus",
+                    audit.getNewStatus()
+            );
+
+            auditMap.put(
+                    "remarks",
+                    audit.getRemarks()
+            );
+
             auditHistory.add(auditMap);
         }
 
@@ -1353,11 +1664,8 @@ public ResponseEntity<ByteArrayResource> downloadSingleDocument(
             doc.setZipFilePath(fileUrl);
             doc.setFileSizeKb((int) (file.getSize() / 1024));
             doc.setUploadedAt(LocalDateTime.now());
-
             claimDocumentsRepo.save(doc);
-
         }
-
         claim.setStatus("Pending");
         claim.setUpdatedAt(LocalDateTime.now());
         claimRepo.save(claim);

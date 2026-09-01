@@ -52,24 +52,24 @@ public class SecurityConfig {
                                 "/ricb/validatePassword"
                         ).permitAll()
 
-                        // MyRICB customer APIs
-                        .requestMatchers(
-                                "/ricb/userprofile",
-                                "/ricb/generalinsurance"
-//                                "/ricb/lifeactivepolicy",
-//                                "/ricb/generalinsurancedetails",
-//                                "/ricb/getOtipCustomer",
-//                                "/ricb/motortppolicy",
-//                                "/ricb/motorcppolicy",
-//                                "/ricb/firesfpolicy",
-//                                "/ricb/deferredannuity",
-//                                "/ricb/immediateannuity",
-//                                "/ricb/geninsurance",
-//                                "/ricb/ppfmemo",
-//                                "/ricb/generalactivepolicy",
-//                                "/ricb/gis"
-
-                                ).authenticated()
+//                        // MyRICB customer APIs
+//                        .requestMatchers(
+////                                "/ricb/userprofile",
+//                                "/ricb/generalinsurance"
+////                                "/ricb/lifeactivepolicy",
+////                                "/ricb/generalinsurancedetails",
+////                                "/ricb/getOtipCustomer",
+////                                "/ricb/motortppolicy",
+////                                "/ricb/motorcppolicy",
+////                                "/ricb/firesfpolicy",
+////                                "/ricb/deferredannuity",
+////                                "/ricb/immediateannuity",
+////                                "/ricb/geninsurance",
+////                                "/ricb/ppfmemo",
+////                                "/ricb/generalactivepolicy",
+////                                "/ricb/gis"
+//
+//                                ).authenticated()
 
                         // ================= PROTECTED APIs =================
                         .requestMatchers(

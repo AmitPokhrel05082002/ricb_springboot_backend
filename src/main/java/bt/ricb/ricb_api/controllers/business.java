@@ -9,6 +9,7 @@ import org.apache.http.message.BasicNameValuePair;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -260,53 +261,53 @@ public ResponseEntity<?> lifeactivepolicy(@RequestParam(required = false) String
     }
 }
 
-    @GetMapping("/generalinsurance")
-    public ResponseEntity<?> policyNumber(Authentication authentication) {
-
-        try {
-
-            // Get CID from JWT
-            String cidNo = authentication.getName();
-
-            if (cidNo == null || cidNo.trim().isEmpty()) {
-                return ResponseEntity
-                        .status(401)
-                        .body("Unauthorized");
-            }
-
-            JSONArray json =
-                    ricbDAO.getPolicyDetails(
-                            cidNo,
-                            "lifeinsurance"
-                    );
-
-            return ResponseEntity.ok(
-                    json.toString()
-            );
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-
-            return ResponseEntity
-                    .internalServerError()
-                    .body("Server was not able to process your request");
-        }
-    }
-
 //    @GetMapping("/generalinsurance")
-//    public ResponseEntity<?> policyNumber(@RequestParam(required = false) String cidNo) {
+//    public ResponseEntity<?> policyNumber(Authentication authentication) {
+//
 //        try {
-//            if (cidNo == null) {
-//                return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
+//
+//            // Get CID from JWT
+//            String cidNo = authentication.getName();
+//
+//            if (cidNo == null || cidNo.trim().isEmpty()) {
+//                return ResponseEntity
+//                        .status(401)
+//                        .body("Unauthorized");
 //            }
-//            JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeinsurance");
-//            return ResponseEntity.ok(json.toString());
+//
+//            JSONArray json =
+//                    ricbDAO.getPolicyDetails(
+//                            cidNo,
+//                            "lifeinsurance"
+//                    );
+//
+//            return ResponseEntity.ok(
+//                    json.toString()
+//            );
+//
 //        } catch (Exception e) {
+//
 //            e.printStackTrace();
-//            return ResponseEntity.internalServerError().body("Server was not able to process your request");
+//
+//            return ResponseEntity
+//                    .internalServerError()
+//                    .body("Server was not able to process your request");
 //        }
 //    }
+
+    @GetMapping("/generalinsurance")
+    public ResponseEntity<?> policyNumber(@RequestParam(required = false) String cidNo) {
+        try {
+            if (cidNo == null) {
+                return ResponseEntity.badRequest().body("Error: please enter cid number of a policy holder.");
+            }
+            JSONArray json = ricbDAO.getPolicyDetails(cidNo, "lifeinsurance");
+            return ResponseEntity.ok(json.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body("Server was not able to process your request");
+        }
+    }
 
     @GetMapping("/generalinsurancedetails")
     public ResponseEntity<?> policyDetails(@RequestParam(required = false) String policyNo) {
@@ -956,27 +957,21 @@ public ResponseEntity<?> lifeactivepolicy(@RequestParam(required = false) String
 //        }
 //    }
 
-    @GetMapping("/userprofile")
+    @GetMapping("/userprofile/{cid}")
     public ResponseEntity<?> userprofile(
-            Authentication authentication) {
+            @PathVariable("cid") String cidNo) {
 
         try {
 
-            String cidNo = authentication.getName();
-
             if (cidNo == null || cidNo.trim().isEmpty()) {
-
                 return ResponseEntity
-                        .status(401)
-                        .body("Unauthorized");
+                        .status(HttpStatus.BAD_REQUEST)
+                        .body("CID is required");
             }
 
-            JSONArray json =
-                    ricbDAO.getUserDetails(cidNo);
+            JSONArray json = ricbDAO.getUserDetails(cidNo);
 
-            return ResponseEntity.ok(
-                    json.toString()
-            );
+            return ResponseEntity.ok(json.toString());
 
         } catch (Exception e) {
 
@@ -984,9 +979,7 @@ public ResponseEntity<?> lifeactivepolicy(@RequestParam(required = false) String
 
             return ResponseEntity
                     .internalServerError()
-                    .body(
-                            "Server was not able to process your request"
-                    );
+                    .body("Server was not able to process your request");
         }
     }
 
