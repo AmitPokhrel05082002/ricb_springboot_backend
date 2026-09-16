@@ -1,13 +1,17 @@
 package bt.ricb.ricb_api.services;
 
+import bt.ricb.ricb_api.config.ConnectionManager;
 import bt.ricb.ricb_api.models.AddressDto;
 import bt.ricb.ricb_api.models.BankDetailsDto;
 import bt.ricb.ricb_api.models.CcdbCustomerDto;
 import bt.ricb.ricb_api.models.FamilyRelationDto;
-
+import bt.ricb.ricb_api.models.DTOs.ChildCustomerDto;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import javax.xml.parsers.ParserConfigurationException;
@@ -214,5 +218,110 @@ public class ApiService {
         sb.append("]");
 
         return sb.toString();
+    }
+
+    public String createChildCustomer(ChildCustomerDto customer) throws Exception {
+
+        String customerCode = null;
+
+        String sequenceSql =
+                "SELECT 'CU' || LPAD(TO_CHAR(ricb_com.sq_in_mas_customer.nextval), 8, '0') AS customer_code " +
+                        "FROM dual";
+
+        String insertSql =
+                "INSERT INTO RICB_COM.TL_IN_MAS_CUSTOMER (" +
+                        "CUSTOMER_CODE, TITLE, FIRST_NAME, MIDDLE_NAME, LAST_NAME, CUSTOMER_NAME, " +
+                        "GENDER, DATE_OF_BIRTH, CITIZEN_ID, CONTACT_TYPE, RESI_ADDRESS_1, " +
+                        "CON_ADDRESS_1, CON_MOBILE_NO1, CON_EMAIL, STATUS_CODE, LAST_UPDATE_BY, " +
+                        "LAST_UPDATE_ON, LAST_UPDATE_TIME, RICB_EMPLOYEE, RECEIVE_SMS, " +
+                        "NATIONALITY, ID_DOC_TYPE" +
+                        ") VALUES (" +
+                        "?, ?, UPPER(?), UPPER(?), UPPER(?), UPPER(?), ?, " +
+                        "TO_DATE(?, 'dd/mm/yyyy'), ?, ?, ?, ?, ?, ?, ?, ?, " +
+                        "SYSDATE, TO_CHAR(SYSDATE, 'hh24:mi:ss'), ?, ?, ?, ?" +
+                        ")";
+
+        try (Connection connection = ConnectionManager.getLifeConnection()) {
+
+            // ---------------------------------------------------------
+            // 1. Generate customer code
+            // ---------------------------------------------------------
+            try (PreparedStatement ps = connection.prepareStatement(sequenceSql);
+                 ResultSet rs = ps.executeQuery()) {
+
+                if (rs.next()) {
+                    customerCode = rs.getString("customer_code");
+                }
+            }
+
+            if (customerCode == null) {
+                throw new Exception("Failed to generate customer code.");
+            }
+
+            // ---------------------------------------------------------
+            // 2. Determine title
+            // Male = Master
+            // Otherwise = Ms
+            // ---------------------------------------------------------
+            String title;
+
+            if ("Male".equalsIgnoreCase(customer.getGender())) {
+                title = "Master";
+            } else {
+                title = "Ms";
+            }
+
+            // ---------------------------------------------------------
+            // 3. Insert customer
+            // ---------------------------------------------------------
+            try (PreparedStatement ps = connection.prepareStatement(insertSql)) {
+
+                int index = 1;
+
+                ps.setString(index++, customerCode);
+                ps.setString(index++, title);
+
+                ps.setString(index++, customer.getFirstName());
+                ps.setString(index++, customer.getMiddleName());
+                ps.setString(index++, customer.getLastName());
+                ps.setString(index++, customer.getFullName());
+
+                ps.setString(index++, customer.getGender());
+
+                ps.setString(index++, customer.getDateOfBirth());
+
+                ps.setString(index++, customer.getCid());
+
+                ps.setString(index++, "C");
+
+                ps.setString(index++, customer.getPermanentAddress());
+                ps.setString(index++, customer.getPresentAddress());
+
+                ps.setString(index++, customer.getMobile());
+                ps.setString(index++, customer.getEmail());
+
+                ps.setString(index++, "A");
+                ps.setString(index++, "Web");
+
+                ps.setString(index++, "N");
+                ps.setString(index++, "Y");
+                ps.setString(index++, "BHUTANESE");
+                ps.setString(index++, "5");
+
+                int rows = ps.executeUpdate();
+
+                if (rows == 1) {
+
+                    return "{"
+                            + "\"status\":\"SUCCESS\","
+                            + "\"message\":\"Child customer created successfully\","
+                            + "\"customerCode\":\"" + customerCode + "\""
+                            + "}";
+                }
+
+                throw new Exception("Customer insertion failed.");
+
+            }
+        }
     }
 }

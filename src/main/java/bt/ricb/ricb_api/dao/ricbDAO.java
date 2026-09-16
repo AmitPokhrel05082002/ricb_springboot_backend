@@ -1,9 +1,11 @@
 package bt.ricb.ricb_api.dao;
 
 import bt.ricb.ricb_api.services.ApiService;
+import bt.ricb.ricb_api.services.EmailService;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Repository;
 
@@ -39,7 +41,11 @@ public class ricbDAO {
     private PasswordEncoder passwordEncoder;
     @Autowired
     private ApiService apiService;
-    
+    @Autowired
+    private EmailService emailService;
+    @Autowired
+    private JavaMailSender mailSender;
+
     private static final String GET_ALL_FIRE_SF_DETAILS = ""
 			 + "select * from V_FIRE_SF_CURR_POLICY where PREVIOUS_POLICY_NO LIKE ? ";
 
@@ -2575,11 +2581,11 @@ private static final String GET_OTIP_CUSTOMER = ""
             conn = mySQLDataSource.getConnection();
 
             // ==========================================
-            // FIND REGISTERED MOBILE
+            // FIND REGISTERED MOBILE AND EMAIL
             // ==========================================
 
             String sql =
-                    "SELECT mobile " +
+                    "SELECT mobile, email " +
                             "FROM apps_users " +
                             "WHERE cid = ? " +
                             "AND status = 1";
@@ -2592,18 +2598,29 @@ private static final String GET_OTIP_CUSTOMER = ""
             if (!rs.next()) {
 
                 response.put("status", "0");
-                response.put("message", "Unable to process request");
+                response.put(
+                        "message",
+                        "Unable to process request"
+                );
 
                 json.put(response);
                 return json;
             }
 
             String mobile = rs.getString("mobile");
+            String email = rs.getString("email");
+
+            // ==========================================
+            // CHECK MOBILE
+            // ==========================================
 
             if (mobile == null || mobile.trim().isEmpty()) {
 
                 response.put("status", "0");
-                response.put("message", "No registered mobile number");
+                response.put(
+                        "message",
+                        "No registered mobile number"
+                );
 
                 json.put(response);
                 return json;
@@ -2612,10 +2629,29 @@ private static final String GET_OTIP_CUSTOMER = ""
             mobile = mobile.trim();
 
             // ==========================================
+            // CHECK EMAIL
+            // ==========================================
+
+            if (email == null || email.trim().isEmpty()) {
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "No registered email address"
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            email = email.trim();
+
+            // ==========================================
             // CHECK MOBILE OPERATOR
             // ==========================================
 
-            if (!mobile.startsWith("17") && !mobile.startsWith("77")) {
+            if (!mobile.startsWith("17")
+                    && !mobile.startsWith("77")) {
 
                 response.put("status", "0");
                 response.put(
@@ -2631,7 +2667,8 @@ private static final String GET_OTIP_CUSTOMER = ""
             // GENERATE 6 DIGIT OTP
             // ==========================================
 
-            SecureRandom secureRandom = new SecureRandom();
+            SecureRandom secureRandom =
+                    new SecureRandom();
 
             String otp = String.format(
                     "%06d",
@@ -2639,13 +2676,17 @@ private static final String GET_OTIP_CUSTOMER = ""
             );
 
             // ==========================================
-            // SEND OTP SMS FIRST
+            // CREATE SMS MESSAGE
             // ==========================================
 
             String smsMessage =
                     "Your RICB password reset OTP is "
                             + otp
                             + ". This OTP is valid for 5 minutes.";
+
+            // ==========================================
+            // SEND OTP BY SMS
+            // ==========================================
 
             try {
 
@@ -2666,28 +2707,60 @@ private static final String GET_OTIP_CUSTOMER = ""
 
             } catch (Exception smsException) {
 
-                // Log technical error on server
                 smsException.printStackTrace();
-
-                // DO NOT SAVE OTP
 
                 response.put("status", "0");
                 response.put(
                         "message",
-                        "Unable to send OTP at the moment. Please try again later."
+                        "Unable to send OTP by SMS at the moment. Please try again later."
                 );
 
                 json.put(response);
-
                 return json;
             }
 
             // ==========================================
-            // SMS SUCCESSFUL
-            // NOW HASH OTP
+            // SEND OTP BY EMAIL
+            // USING EXISTING EmailService
             // ==========================================
 
-            String otpHash = passwordEncoder.encode(otp);
+            try {
+
+                emailService.sendEmail(
+                        email,
+                        "RICB Password Reset OTP",
+                        "Dear Customer,\n\n"
+                                + "Your RICB password reset OTP is: "
+                                + otp
+                                + "\n\n"
+                                + "This OTP is valid for 5 minutes.\n\n"
+                                + "If you did not request a password reset, "
+                                + "please ignore this email.\n\n"
+                                + "Regards,\n"
+                                + "Royal Insurance Corporation of Bhutan Limited",
+                        null
+                );
+
+            } catch (Exception emailException) {
+
+                emailException.printStackTrace();
+
+                response.put("status", "0");
+                response.put(
+                        "message",
+                        "Unable to send OTP by email at the moment. Please try again later."
+                );
+
+                json.put(response);
+                return json;
+            }
+
+            // ==========================================
+            // HASH OTP
+            // ==========================================
+
+            String otpHash =
+                    passwordEncoder.encode(otp);
 
             // ==========================================
             // OTP EXPIRY - 5 MINUTES
@@ -2714,7 +2787,7 @@ private static final String GET_OTIP_CUSTOMER = ""
             }
 
             // ==========================================
-            // SAVE OTP ONLY AFTER SMS SUCCESS
+            // SAVE OTP
             // ==========================================
 
             String insertSql =
@@ -2738,18 +2811,63 @@ private static final String GET_OTIP_CUSTOMER = ""
 
             response.put(
                     "message",
-                    "OTP has been sent to your registered mobile number"
+                    "OTP has been sent to your registered mobile number and email address"
             );
+
+            // Mask mobile
+            String maskedMobile =
+                    "******"
+                            + mobile.substring(
+                            Math.max(
+                                    0,
+                                    mobile.length() - 4
+                            )
+                    );
 
             response.put(
                     "mobile",
-                    "******" +
-                            mobile.substring(
-                                    Math.max(
-                                            0,
-                                            mobile.length() - 4
-                                    )
-                            )
+                    maskedMobile
+            );
+
+            // Mask email
+            String maskedEmail;
+
+            int atIndex = email.indexOf("@");
+
+            if (atIndex > 0) {
+
+                String username =
+                        email.substring(0, atIndex);
+
+                String domain =
+                        email.substring(atIndex);
+
+                if (username.length() <= 2) {
+
+                    maskedEmail =
+                            "*" + domain;
+
+                } else {
+
+                    maskedEmail =
+                            username.substring(0, 2)
+                                    + "******"
+                                    + domain;
+                }
+
+            } else {
+
+                maskedEmail = "******";
+            }
+
+            response.put(
+                    "email",
+                    maskedEmail
+            );
+
+            response.put(
+                    "expiresIn",
+                    300
             );
 
             json.put(response);

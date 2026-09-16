@@ -460,8 +460,6 @@ public class InsuranceService {
 	        pst.setString(18, "MyRICB");
 	        pst.setString(19, fromUser.format(curDate));
 	        pst.setString(20, cidNo);
-
-
 	        pst.executeUpdate();
 	    } catch (Exception e) {
 	        e.printStackTrace();

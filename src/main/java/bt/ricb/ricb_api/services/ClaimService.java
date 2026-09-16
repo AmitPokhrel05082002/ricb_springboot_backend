@@ -1329,10 +1329,11 @@ public class ClaimService {
 
         List<BranchDTO> list = new ArrayList<>();
 
-        String sql = "SELECT branch_code, Branch_name " +
+        String sql = "SELECT branch_code, " +
+                "TRIM(SUBSTR(Branch_name, INSTR(Branch_name, '-') + 1)) AS Branch_name " +
                 "FROM RICB_COM.TL_IN_MAS_BRANCH " +
                 "WHERE status_code = 'A' " +
-                "ORDER BY branch_code";
+                "ORDER BY Branch_name";
 
         try (Connection conn = ConnectionManager.getLifeConnection();
              PreparedStatement ps = conn.prepareStatement(sql);

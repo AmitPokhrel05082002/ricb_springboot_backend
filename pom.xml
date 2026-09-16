@@ -124,6 +124,7 @@
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
+
         <!-- Jackson JSON library for parsing JSON -->
         <!-- <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

@@ -1377,5 +1377,4 @@ class ToJSON {
         }
         return jsonArray;
     }
-
 }

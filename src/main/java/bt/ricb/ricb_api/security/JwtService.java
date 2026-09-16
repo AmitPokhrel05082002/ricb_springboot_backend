@@ -15,7 +15,17 @@ public class JwtService {
     private static final String SECRET =
             "my-super-secret-key-my-super-secret-key-123456";
 
-    private final Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
+    // JWT expiration: 2 hours
+    private static final long JWT_EXPIRATION =
+            2 * 60 * 60 * 1000L;
+
+    private final Key key = Keys.hmacShaKeyFor(
+            SECRET.getBytes()
+    );
+
+    // =========================================================
+    // Generate normal user/admin token
+    // =========================================================
 
     public String generateToken(
             String userId,
@@ -30,12 +40,23 @@ public class JwtService {
                 .claim("role", role)
                 .claim("branchId", branchId)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 900000))
-                .signWith(key, SignatureAlgorithm.HS256)
+                .setExpiration(
+                        new Date(
+                                System.currentTimeMillis()
+                                        + JWT_EXPIRATION
+                        )
+                )
+                .signWith(
+                        key,
+                        SignatureAlgorithm.HS256
+                )
                 .compact();
     }
 
-    // ===== Extract Username =====
+    // =========================================================
+    // Extract Username
+    // =========================================================
+
     public String extractUsername(String token) {
 
         return Jwts.parserBuilder()
@@ -46,7 +67,10 @@ public class JwtService {
                 .getSubject();
     }
 
-    // ===== Extract Role =====
+    // =========================================================
+    // Extract Role
+    // =========================================================
+
     public String extractRole(String token) {
 
         return (String) Jwts.parserBuilder()
@@ -57,7 +81,10 @@ public class JwtService {
                 .get("role");
     }
 
-    // ===== Validate Token =====
+    // =========================================================
+    // Validate Token
+    // =========================================================
+
     public boolean isValid(String token) {
 
         try {
@@ -75,6 +102,10 @@ public class JwtService {
         }
     }
 
+    // =========================================================
+    // Generate Customer Token
+    // =========================================================
+
     public String generateCustomerToken(String cidNo) {
 
         return Jwts.builder()
@@ -84,7 +115,7 @@ public class JwtService {
                 .setExpiration(
                         new Date(
                                 System.currentTimeMillis()
-                                        + 15 * 60 * 1000
+                                        + JWT_EXPIRATION
                         )
                 )
                 .signWith(
@@ -93,6 +124,10 @@ public class JwtService {
                 )
                 .compact();
     }
+
+    // =========================================================
+    // Extract Token Type
+    // =========================================================
 
     public String extractTokenType(String token) {
 
@@ -108,3 +143,4 @@ public class JwtService {
                 : null;
     }
 }
+
